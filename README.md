@@ -5,10 +5,10 @@ How to use the API (quick)
 
 ```bash
 pip install -r requirements.txt
-export SPOTIFY_CLIENT_ID="your_client_id"
-export SPOTIFY_CLIENT_SECRET="your_client_secret"
-export SPOTIFY_REDIRECT_URI="http://localhost:8000/api/auth/callback"
-export JWT_SECRET="a_strong_jwt_secret"
+export SPOTIFY_CLIENT_ID="d589749d63f14861bfdb5a46e66d9826"
+export SPOTIFY_CLIENT_SECRET="6160cb16978d46d2b9f9df75c8465cb1"
+export SPOTIFY_REDIRECT_URI="http://127.0.0.1:8000/api/auth/callback"
+export JWT_SECRET="67bd32444f83f1ba"
 ```
 
 2. Start the server:
