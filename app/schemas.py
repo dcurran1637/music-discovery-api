@@ -36,6 +36,22 @@ class Playlist(BaseModel):
     createdAt: datetime
     tracks: List[PlaylistTrack]
 
+
+class PlaylistCreate(BaseModel):
+    """Schema used when creating or updating playlists via the API.
+
+    Fields:
+    - name: display name for the playlist (required)
+    - description: optional text describing the playlist
+    """
+    name: str
+    description: Optional[str] = None
+
+    class Config:
+        schema_extra = {
+            "example": {"name": "Chill Vibes", "description": "Laid-back tracks for working"}
+        }
+
 class RecommendedTrack(BaseModel):
     trackId: str
     title: str
