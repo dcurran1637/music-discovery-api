@@ -40,6 +40,24 @@ async def get_track(track_id: str):
             return r.json()
         return None
 
+
+async def get_artist(artist_id: str, spotify_token: Optional[str] = None):
+    """
+    Retrieve artist metadata from Spotify.
+    If `spotify_token` is not provided, falls back to client credentials token.
+    """
+    token = spotify_token or await get_spotify_token()
+    if not token:
+        return None
+    async with httpx.AsyncClient() as client:
+        r = await client.get(
+            f"https://api.spotify.com/v1/artists/{artist_id}",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        if r.status_code == 200:
+            return r.json()
+        return None
+
 async def get_spotify_recommendations(
     spotify_token: str,
     limit: int = 20,
