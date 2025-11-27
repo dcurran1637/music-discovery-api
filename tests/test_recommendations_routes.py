@@ -20,10 +20,11 @@ def test_user_id():
 
 @pytest.fixture
 def valid_jwt_token(test_user_id):
-    """Generate a valid JWT token for testing"""
+    """Generate a valid JWT token for testing with Spotify token"""
     payload = {
         "user_id": test_user_id,
-        "exp": datetime.utcnow().timestamp() + 3600  # 1 hour from now
+        "spotify_access_token": "mock_spotify_token_123",
+        "spotify_refresh_token": "mock_refresh_token_123"
     }
     token = jwt.encode(
         payload,

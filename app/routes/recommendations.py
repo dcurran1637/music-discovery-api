@@ -19,11 +19,21 @@ async def recommendations(
     genres: Optional[str] = Query(None, description="Comma-separated genres to filter"),
     min_popularity: Optional[int] = Query(None, ge=0, le=100),
     released_after: Optional[str] = Query(None, description="YYYY-MM-DD"),
-    user_id: str = Depends(verify_jwt_token),  # JWT auth
+    user_payload = Depends(verify_jwt_token),  # JWT auth - returns full payload
 ):
     """
     Returns Spotify-based track recommendations filtered by genre, popularity, and release date.
+    Uses the Spotify access token from the JWT payload.
     """
+    user_id = user_payload.get("user_id")
+    spotify_token = user_payload.get("spotify_access_token")
+    
+    if not spotify_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Spotify access token not found. Please login with Spotify."
+        )
+    
     cache_key = f"recommendations:{user_id}:{genres}:{min_popularity}:{released_after}"
     
     try:
@@ -36,10 +46,11 @@ async def recommendations(
         # If redis is not available, continue without caching
         cached = None
 
-    # 1. Fetch Spotify recommendations
+    # 1. Fetch Spotify recommendations using user's token
     try:
         genre_list = [g.strip().lower() for g in genres.split(",")] if genres else None
         rec_tracks = await get_spotify_recommendations(
+            spotify_token=spotify_token,
             genres=genre_list,
             min_popularity=min_popularity,
             released_after=released_after

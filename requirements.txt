@@ -4,3 +4,6 @@ boto3
 pydantic[email]
 pytest-asyncio[httpx]
 redis[aioredis]
+httpx
+PyJWT
+python-multipart

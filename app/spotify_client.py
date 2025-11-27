@@ -41,19 +41,21 @@ async def get_track(track_id: str):
         return None
 
 async def get_spotify_recommendations(
+    spotify_token: str,
     limit: int = 20,
     genres: Optional[List[str]] = None,
     min_popularity: Optional[int] = None,
     released_after: Optional[str] = None
 ):
     """
-    Fetch Spotify recommendations with optional filtering.
+    Fetch Spotify recommendations with optional filtering using user's OAuth token.
+    :param spotify_token: User's Spotify access token from OAuth
+    :param limit: Number of recommendations (default 20)
     :param genres: List of genres to filter
     :param min_popularity: Minimum track popularity
     :param released_after: Release date filter "YYYY-MM-DD"
     """
-    token = await get_spotify_token()
-    if not token:
+    if not spotify_token:
         return []
 
     # Demo seed artist; replace with user-specific seeds
@@ -61,7 +63,7 @@ async def get_spotify_recommendations(
     url = f"https://api.spotify.com/v1/recommendations?limit={limit}&seed_artists={seed_artists}"
 
     async with httpx.AsyncClient() as client:
-        r = await client.get(url, headers={"Authorization": f"Bearer {token}"})
+        r = await client.get(url, headers={"Authorization": f"Bearer {spotify_token}"})
         r.raise_for_status()
         data = r.json()
 
@@ -73,7 +75,7 @@ async def get_spotify_recommendations(
         async with httpx.AsyncClient() as client:
             art_resp = await client.get(
                 f"https://api.spotify.com/v1/artists/{artist_id}",
-                headers={"Authorization": f"Bearer {token}"}
+                headers={"Authorization": f"Bearer {spotify_token}"}
             )
             art_resp.raise_for_status()
             artist_data = art_resp.json()
