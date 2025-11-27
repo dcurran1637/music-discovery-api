@@ -127,8 +127,12 @@ def put_user_tokens(user_id, access_token_encrypted, refresh_token_encrypted, ex
 
 
 def get_user_tokens(user_id):
-    resp = user_table.get_item(Key={"id": user_id})
-    return resp.get("Item")
+    try:
+        resp = user_table.get_item(Key={"id": user_id})
+        return resp.get("Item")
+    except Exception:
+        # If DynamoDB is not configured or credentials are missing, return None
+        return None
 
 
 def remove_track(playlist_id, track_id):

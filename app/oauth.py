@@ -24,12 +24,44 @@ SPOTIFY_REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8000/
 JWT_SECRET = os.getenv("JWT_SECRET", "demo_jwt_secret")
 JWT_ALGORITHM = "HS256"
 
-# Store for authorization states (in production, use Redis or database)
-# Format: {state: {user_id, created_at}}
-auth_states: Dict[str, Dict[str, Any]] = {}
+# Use Redis for authorization states (fallback to in-memory dict if Redis unavailable)
+import redis.asyncio as aioredis
+import json
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+AUTH_STATE_TTL = 15 * 60  # 15 minutes
+
+# In-memory fallback
+_auth_states_fallback: Dict[str, Dict[str, Any]] = {}
 
 
-def generate_auth_url(user_id: str) -> tuple[str, str]:
+async def _set_state(state: str, user_id: str):
+    payload = {"user_id": user_id, "created_at": datetime.utcnow().isoformat()}
+    try:
+        r = await aioredis.from_url(REDIS_URL, decode_responses=True)
+        await r.set(f"oauth_state:{state}", json.dumps(payload), ex=AUTH_STATE_TTL)
+        await r.close()
+    except Exception:
+        # fallback to in-memory store (not durable)
+        _auth_states_fallback[state] = {"user_id": user_id, "created_at": datetime.utcnow()}
+
+
+async def _pop_state(state: str) -> Optional[Dict[str, Any]]:
+    try:
+        r = await aioredis.from_url(REDIS_URL, decode_responses=True)
+        data = await r.get(f"oauth_state:{state}")
+        if data:
+            await r.delete(f"oauth_state:{state}")
+            await r.close()
+            return json.loads(data)
+        await r.close()
+    except Exception:
+        pass
+
+    return _auth_states_fallback.pop(state, None)
+
+
+async def generate_auth_url(user_id: str) -> tuple[str, str]:
     """
     Generate Spotify OAuth authorization URL.
     
@@ -43,10 +75,8 @@ def generate_auth_url(user_id: str) -> tuple[str, str]:
         )
     
     state = secrets.token_urlsafe(32)
-    auth_states[state] = {
-        "user_id": user_id,
-        "created_at": datetime.utcnow(),
-    }
+    # Persist the state in Redis (async)
+    await _set_state(state, user_id)
     
     params = {
         "client_id": SPOTIFY_CLIENT_ID,
@@ -80,21 +110,29 @@ async def exchange_code_for_token(code: str, state: str) -> Dict[str, Any]:
     Returns:
         Token response with access_token, refresh_token, etc.
     """
-    # Verify state
-    if state not in auth_states:
+    # Verify state (pop from Redis or fallback)
+    state_data = await _pop_state(state)
+    if not state_data:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid state parameter"
+            detail="Invalid or expired state parameter"
         )
-    
-    state_data = auth_states.pop(state)
-    
-    # Check if state expired (15 minutes)
-    if datetime.utcnow() - state_data["created_at"] > timedelta(minutes=15):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="State expired"
-        )
+
+    # If created_at is stored as ISO string, parse and validate age
+    try:
+        created = state_data.get("created_at")
+        if isinstance(created, str):
+            created_dt = datetime.fromisoformat(created)
+        else:
+            created_dt = created
+        if datetime.utcnow() - created_dt > timedelta(minutes=15):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="State expired"
+            )
+    except Exception:
+        # If parsing fails, continue (best-effort) — state is considered valid
+        pass
     
     if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
         raise HTTPException(

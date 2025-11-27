@@ -35,7 +35,7 @@ async def login(user_id: str = Query(..., description="User ID")):
         Redirect to Spotify authorization URL
     """
     try:
-        auth_url, state = generate_auth_url(user_id)
+        auth_url, state = await generate_auth_url(user_id)
         return RedirectResponse(url=auth_url)
     except HTTPException as e:
         return {"error": str(e.detail)}
