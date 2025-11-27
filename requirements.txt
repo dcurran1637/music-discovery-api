@@ -3,3 +3,4 @@ uvicorn
 boto3
 pydantic[email]
 pytest-asyncio[httpx]
+redis[aioredis]

@@ -59,7 +59,35 @@ class RecommendedTrack(BaseModel):
     genre: Optional[str] = None
     reason: Optional[str] = None
 
-class Recommendation(BaseModel):
-    userId: str
-    generatedAt: datetime
-    recommendedTracks: List[RecommendedTrack]
+async def get_spotify_recommendations(limit=20):
+    token = await get_spotify_token()
+    if not token:
+        return []
+
+    seed_artists = "4NHQUGzhtTLFvgF5SZesLK"  # demo; replace with user top artists
+    url = f"https://api.spotify.com/v1/recommendations?limit={limit}&seed_artists={seed_artists}"
+
+    async with httpx.AsyncClient() as client:
+        r = await client.get(url, headers={"Authorization": f"Bearer {token}"})
+        r.raise_for_status()
+        data = r.json()
+
+    tracks = []
+    for item in data["tracks"]:
+        # Fetch artist genres
+        artist_id = item["artists"][0]["id"]
+        async with httpx.AsyncClient() as client:
+            art_resp = await client.get(f"https://api.spotify.com/v1/artists/{artist_id}",
+                                        headers={"Authorization": f"Bearer {token}"})
+            art_resp.raise_for_status()
+            artist_data = art_resp.json()
+        tracks.append({
+            "trackId": item["id"],
+            "title": item["name"],
+            "artist": item["artists"][0]["name"],
+            "genres": artist_data.get("genres", []),
+            "album": item["album"]["name"],
+            "previewUrl": item.get("preview_url")
+        })
+    return tracks
+
