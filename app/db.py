@@ -14,6 +14,8 @@ else:
     dynamodb = boto3.resource("dynamodb", region_name=REGION)
 
 table = dynamodb.Table(TABLE_NAME)
+USERS_TABLE = os.getenv("DYNAMODB_USERS_TABLE", "users")
+user_table = dynamodb.Table(USERS_TABLE)
 
 
 def create_playlist(user_id, name, description=""):
@@ -105,6 +107,28 @@ def add_track(playlist_id, track):
         ReturnValues="ALL_NEW"
     )
     return updated.get("Attributes")
+
+
+def put_user_tokens(user_id, access_token_encrypted, refresh_token_encrypted, expires_at_iso: str):
+    """
+    Store or update user's Spotify tokens (encrypted) and expiry timestamp (ISO).
+    """
+    now = datetime.utcnow().isoformat()
+    item = {
+        "id": user_id,
+        "access_token": access_token_encrypted,
+        "refresh_token": refresh_token_encrypted,
+        "expires_at": expires_at_iso,
+        "updatedAt": now,
+        "type": "user_tokens",
+    }
+    user_table.put_item(Item=item)
+    return item
+
+
+def get_user_tokens(user_id):
+    resp = user_table.get_item(Key={"id": user_id})
+    return resp.get("Item")
 
 
 def remove_track(playlist_id, track_id):

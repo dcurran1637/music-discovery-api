@@ -6,6 +6,9 @@ import redis.asyncio as aioredis
 import os
 import json
 from datetime import datetime, timedelta
+from .. import db
+from ..crypto import decrypt, encrypt
+from ..oauth import refresh_spotify_token
 
 router = APIRouter(prefix="/api/discover", tags=["recommendations"])
 
@@ -26,13 +29,37 @@ async def recommendations(
     Uses the Spotify access token from the JWT payload.
     """
     user_id = user_payload.get("user_id")
-    spotify_token = user_payload.get("spotify_access_token")
-    
-    if not spotify_token:
+
+    # Fetch encrypted tokens from DB
+    user_tokens = db.get_user_tokens(user_id)
+    if not user_tokens:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Spotify access token not found. Please login with Spotify."
+            detail="Spotify tokens not found. Please login with Spotify."
         )
+
+    try:
+        spotify_token = decrypt(user_tokens.get("access_token", ""))
+    except Exception:
+        spotify_token = None
+
+    # If access token expired or missing, try to refresh using stored refresh token
+    expires_at = user_tokens.get("expires_at")
+    if not spotify_token or (expires_at and datetime.fromisoformat(expires_at) <= datetime.utcnow()):
+        try:
+            refresh_enc = user_tokens.get("refresh_token")
+            refresh_token = decrypt(refresh_enc) if refresh_enc else None
+            if refresh_token:
+                token_data = await refresh_spotify_token(refresh_token)
+                # Persist new tokens
+                enc_access = encrypt(token_data.get("access_token"))
+                enc_refresh = encrypt(token_data.get("refresh_token") or refresh_token)
+                new_expires_at = (datetime.utcnow() + timedelta(seconds=token_data.get("expires_in", 3600))).isoformat()
+                db.put_user_tokens(user_id, enc_access, enc_refresh, new_expires_at)
+                spotify_token = token_data.get("access_token")
+        except Exception:
+            # let downstream call raise if token not available
+            spotify_token = spotify_token
     
     cache_key = f"recommendations:{user_id}:{genres}:{min_popularity}:{released_after}"
     

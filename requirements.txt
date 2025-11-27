@@ -6,4 +6,5 @@ pytest-asyncio[httpx]
 redis[aioredis]
 httpx
 PyJWT
+cryptography
 python-multipart
