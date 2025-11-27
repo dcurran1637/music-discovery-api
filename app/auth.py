@@ -15,8 +15,10 @@ def require_write_api_key(x_api_key: str = Header(None)):
 
 def verify_jwt_token(authorization: str = Header(...)):
     """
-    Verifies JWT token from Authorization header: "Bearer <token>"
-    Returns the full payload including Spotify tokens.
+    Verifies JWT token from Authorization header: "Bearer <token>".
+    Returns the decoded payload. New tokens include a `session_id` which
+    should be used to look up server-side stored tokens. For backward
+    compatibility, JWTs containing `spotify_access_token` are accepted.
     """
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid auth header")
@@ -24,7 +26,9 @@ def verify_jwt_token(authorization: str = Header(...)):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = payload.get("user_id")
-        if not user_id:
+        session_id = payload.get("session_id")
+        # Require at least a user_id and either a session_id or an embedded access token (legacy)
+        if not user_id or (not session_id and not payload.get("spotify_access_token")):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
         return payload
     except jwt.ExpiredSignatureError:

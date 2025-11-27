@@ -213,6 +213,7 @@ async def refresh_spotify_token(refresh_token: str) -> Dict[str, Any]:
 
 def create_jwt_token(
     user_id: str,
+    session_id: str,
     expires_in: int = 3600
 ) -> str:
     """
@@ -229,6 +230,7 @@ def create_jwt_token(
     """
     payload = {
         "user_id": user_id,
+        "session_id": session_id,
         "exp": datetime.utcnow() + timedelta(seconds=expires_in),
         "iat": datetime.utcnow(),
     }

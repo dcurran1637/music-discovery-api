@@ -30,38 +30,59 @@ async def recommendations(
     """
     user_id = user_payload.get("user_id")
 
-    # Fetch encrypted tokens from DB
-    user_tokens = db.get_user_tokens(user_id)
-
+    # Prefer session-based tokens (new): look up by session_id from JWT
     spotify_token = None
-    # Primary: try persisted tokens
-    if user_tokens:
-        try:
-            spotify_token = decrypt(user_tokens.get("access_token", ""))
-        except Exception:
-            spotify_token = None
-
-        # If access token expired or missing, try to refresh using stored refresh token
-        expires_at = user_tokens.get("expires_at")
-        if (not spotify_token) and user_tokens:
+    session_id = user_payload.get("session_id")
+    if session_id:
+        session = db.get_session_tokens(session_id)
+        if session:
             try:
-                refresh_enc = user_tokens.get("refresh_token")
-                refresh_token = decrypt(refresh_enc) if refresh_enc else None
-                if refresh_token:
-                    token_data = await refresh_spotify_token(refresh_token)
-                    # Persist new tokens
-                    enc_access = encrypt(token_data.get("access_token"))
-                    enc_refresh = encrypt(token_data.get("refresh_token") or refresh_token)
-                    new_expires_at = (datetime.utcnow() + timedelta(seconds=token_data.get("expires_in", 3600))).isoformat()
-                    db.put_user_tokens(user_id, enc_access, enc_refresh, new_expires_at)
-                    spotify_token = token_data.get("access_token")
+                spotify_token = decrypt(session.get("access_token", ""))
             except Exception:
-                spotify_token = spotify_token
+                spotify_token = None
 
-    # Fallback: if no persisted tokens, allow JWT to contain spotify_access_token (legacy/tests)
+            # If access token missing/expired, try refresh using stored refresh token
+            if not spotify_token:
+                try:
+                    refresh_enc = session.get("refresh_token")
+                    refresh_token = decrypt(refresh_enc) if refresh_enc else None
+                    if refresh_token:
+                        token_data = await refresh_spotify_token(refresh_token)
+                        # Persist refreshed tokens under the same session
+                        enc_access = encrypt(token_data.get("access_token"))
+                        enc_refresh = encrypt(token_data.get("refresh_token") or refresh_token)
+                        new_expires_at = (datetime.utcnow() + timedelta(seconds=token_data.get("expires_in", 3600))).isoformat()
+                        db.put_session_tokens(session_id, user_id, enc_access, enc_refresh, new_expires_at)
+                        spotify_token = token_data.get("access_token")
+                except Exception:
+                    spotify_token = spotify_token
+
+    # Fallback: if no session tokens, try legacy user-scoped tokens
+    if not spotify_token:
+        user_tokens = db.get_user_tokens(user_id)
+        if user_tokens:
+            try:
+                spotify_token = decrypt(user_tokens.get("access_token", ""))
+            except Exception:
+                spotify_token = None
+
+            if not spotify_token and user_tokens:
+                try:
+                    refresh_enc = user_tokens.get("refresh_token")
+                    refresh_token = decrypt(refresh_enc) if refresh_enc else None
+                    if refresh_token:
+                        token_data = await refresh_spotify_token(refresh_token)
+                        enc_access = encrypt(token_data.get("access_token"))
+                        enc_refresh = encrypt(token_data.get("refresh_token") or refresh_token)
+                        new_expires_at = (datetime.utcnow() + timedelta(seconds=token_data.get("expires_in", 3600))).isoformat()
+                        db.put_user_tokens(user_id, enc_access, enc_refresh, new_expires_at)
+                        spotify_token = token_data.get("access_token")
+                except Exception:
+                    spotify_token = spotify_token
+
+    # Final fallback: allow JWT to contain spotify_access_token (legacy/tests)
     if not spotify_token:
         spotify_token = user_payload.get("spotify_access_token")
-        # If JWT carries an expires timestamp for spotify token, we don't validate it here
     
     cache_key = f"recommendations:{user_id}:{genres}:{min_popularity}:{released_after}"
     

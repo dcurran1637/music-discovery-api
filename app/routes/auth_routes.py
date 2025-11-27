@@ -17,6 +17,7 @@ from ..oauth import (
 )
 from .. import db
 from ..crypto import encrypt, decrypt
+import uuid
 from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
@@ -73,11 +74,12 @@ async def callback(code: Optional[str] = Query(None), state: str = Query(...)):
         expires_in = token_response.get("spotify_token_expires_in") or 3600
         expires_at = (datetime.utcnow() + timedelta(seconds=expires_in)).isoformat()
 
-        # Store tokens in users table
-        db.put_user_tokens(user_id, enc_access, enc_refresh, expires_at)
+        # Create a session id and store session-scoped tokens
+        session_id = uuid.uuid4().hex
+        db.put_session_tokens(session_id, user_id, enc_access, enc_refresh, expires_at)
 
-        # Create a JWT session token (no raw refresh token embedded)
-        jwt_token = create_jwt_token(user_id=user_id, expires_in=expires_in)
+        # Create a JWT session token referencing the session id (no raw tokens)
+        jwt_token = create_jwt_token(user_id=user_id, session_id=session_id, expires_in=expires_in)
 
         # Return token in a secure format
         return {
@@ -85,6 +87,7 @@ async def callback(code: Optional[str] = Query(None), state: str = Query(...)):
             "token_type": "bearer",
             "expires_in": expires_in,
             "user_id": user_id,
+            "session_id": session_id,
         }
     except HTTPException:
         raise
@@ -143,37 +146,70 @@ async def get_current_user(authorization: str = Query(..., description="Bearer t
         
         token = authorization.split(" ")[1]
         
-        # Verify JWT and get user id
+        # Verify JWT and get user id and session id
         payload = verify_token(token)
         user_id = payload.get("user_id")
+        session_id = payload.get("session_id")
 
-        # Fetch user's stored Spotify tokens
-        user_tokens = db.get_user_tokens(user_id)
-        if not user_tokens:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Spotify tokens not found. Please login with Spotify."
-            )
+        spotify_token = None
 
-        try:
-            spotify_token = decrypt(user_tokens.get("access_token", ""))
-        except Exception:
-            spotify_token = None
+        # Prefer session-scoped tokens
+        if session_id:
+            session = db.get_session_tokens(session_id)
+            if not session:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Spotify session tokens not found. Please login with Spotify."
+                )
 
-        expires_at = user_tokens.get("expires_at")
-        if not spotify_token or (expires_at and datetime.fromisoformat(expires_at) <= datetime.utcnow()):
             try:
-                refresh_enc = user_tokens.get("refresh_token")
-                refresh_token = decrypt(refresh_enc) if refresh_enc else None
-                if refresh_token:
-                    token_data = await refresh_spotify_token(refresh_token)
-                    enc_access = encrypt(token_data.get("access_token"))
-                    enc_refresh = encrypt(token_data.get("refresh_token") or refresh_token)
-                    new_expires_at = (datetime.utcnow() + timedelta(seconds=token_data.get("expires_in", 3600))).isoformat()
-                    db.put_user_tokens(user_id, enc_access, enc_refresh, new_expires_at)
-                    spotify_token = token_data.get("access_token")
+                spotify_token = decrypt(session.get("access_token", ""))
             except Exception:
-                pass
+                spotify_token = None
+
+            expires_at = session.get("expires_at")
+            if not spotify_token or (expires_at and datetime.fromisoformat(expires_at) <= datetime.utcnow()):
+                try:
+                    refresh_enc = session.get("refresh_token")
+                    refresh_token = decrypt(refresh_enc) if refresh_enc else None
+                    if refresh_token:
+                        token_data = await refresh_spotify_token(refresh_token)
+                        enc_access = encrypt(token_data.get("access_token"))
+                        enc_refresh = encrypt(token_data.get("refresh_token") or refresh_token)
+                        new_expires_at = (datetime.utcnow() + timedelta(seconds=token_data.get("expires_in", 3600))).isoformat()
+                        db.put_session_tokens(session_id, user_id, enc_access, enc_refresh, new_expires_at)
+                        spotify_token = token_data.get("access_token")
+                except Exception:
+                    pass
+
+        # Fallback: user-scoped tokens (legacy)
+        if not spotify_token:
+            user_tokens = db.get_user_tokens(user_id)
+            if not user_tokens:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Spotify tokens not found. Please login with Spotify."
+                )
+
+            try:
+                spotify_token = decrypt(user_tokens.get("access_token", ""))
+            except Exception:
+                spotify_token = None
+
+            expires_at = user_tokens.get("expires_at")
+            if not spotify_token or (expires_at and datetime.fromisoformat(expires_at) <= datetime.utcnow()):
+                try:
+                    refresh_enc = user_tokens.get("refresh_token")
+                    refresh_token = decrypt(refresh_enc) if refresh_enc else None
+                    if refresh_token:
+                        token_data = await refresh_spotify_token(refresh_token)
+                        enc_access = encrypt(token_data.get("access_token"))
+                        enc_refresh = encrypt(token_data.get("refresh_token") or refresh_token)
+                        new_expires_at = (datetime.utcnow() + timedelta(seconds=token_data.get("expires_in", 3600))).isoformat()
+                        db.put_user_tokens(user_id, enc_access, enc_refresh, new_expires_at)
+                        spotify_token = token_data.get("access_token")
+                except Exception:
+                    pass
 
         # Get user profile from Spotify
         profile = await get_user_profile(spotify_token)

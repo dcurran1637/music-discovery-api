@@ -135,6 +135,50 @@ def get_user_tokens(user_id):
         return None
 
 
+def put_session_tokens(session_id, user_id, access_token_encrypted, refresh_token_encrypted, expires_at_iso: str):
+    """
+    Store or update session-scoped Spotify tokens (encrypted) tied to a session_id.
+    """
+    now = datetime.utcnow().isoformat()
+    item = {
+        "id": session_id,
+        "user_id": user_id,
+        "access_token": access_token_encrypted,
+        "refresh_token": refresh_token_encrypted,
+        "expires_at": expires_at_iso,
+        "createdAt": now,
+        "updatedAt": now,
+        "type": "session_tokens",
+    }
+    try:
+        user_table.put_item(Item=item)
+        return item
+    except Exception:
+        return None
+
+
+def get_session_tokens(session_id):
+    """
+    Retrieve the session-scoped token record by session_id. Returns None on errors or missing item.
+    """
+    try:
+        resp = user_table.get_item(Key={"id": session_id})
+        return resp.get("Item")
+    except Exception:
+        return None
+
+
+def delete_session_tokens(session_id):
+    """
+    Delete a session token record (best-effort).
+    """
+    try:
+        user_table.delete_item(Key={"id": session_id})
+        return True
+    except Exception:
+        return False
+
+
 def remove_track(playlist_id, track_id):
     playlist = get_playlist(playlist_id)
     if not playlist:
