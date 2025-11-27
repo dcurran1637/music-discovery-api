@@ -17,8 +17,11 @@ from ..oauth import (
 )
 from .. import db
 from ..crypto import encrypt, decrypt
+from ..logging_config import get_logger
 import uuid
 from datetime import datetime, timedelta
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 
@@ -81,6 +84,8 @@ async def callback(code: Optional[str] = Query(None), state: str = Query(...)):
         # Create a JWT session token referencing the session id (no raw tokens)
         jwt_token = create_jwt_token(user_id=user_id, session_id=session_id, expires_in=expires_in)
 
+        logger.info(f"Successful OAuth login for user {user_id}")
+
         # Return token in a secure format
         return {
             "access_token": jwt_token,
@@ -92,6 +97,7 @@ async def callback(code: Optional[str] = Query(None), state: str = Query(...)):
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"OAuth callback error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"OAuth callback error: {str(e)}"

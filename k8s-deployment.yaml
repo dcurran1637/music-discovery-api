@@ -1,0 +1,161 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: music-discovery-api
+  labels:
+    app: music-discovery-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: music-discovery-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: music-discovery-api
+    spec:
+      containers:
+      - name: api
+        image: music-discovery-api:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+        
+        env:
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: SPOTIFY_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: spotify-secrets
+              key: client-id
+        - name: SPOTIFY_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: spotify-secrets
+              key: client-secret
+        - name: SPOTIFY_REDIRECT_URI
+          value: "https://api.yourdomain.com/api/auth/callback"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: jwt-secret
+        - name: CRYPTO_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: crypto-key
+        - name: DYNAMODB_REGION
+          value: "us-east-1"
+        - name: REDIS_URL
+          value: "redis://redis:6379"
+        
+        # Liveness probe
+        livenessProbe:
+          httpGet:
+            path: /api/health/live
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        # Readiness probe
+        readinessProbe:
+          httpGet:
+            path: /api/health/ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        
+        # Resource limits
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        
+        # Security context
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+        
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      
+      # Pod disruption budget for high availability
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - music-discovery-api
+              topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: music-discovery-api
+  labels:
+    app: music-discovery-api
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: music-discovery-api
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: music-discovery-api-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: music-discovery-api
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80

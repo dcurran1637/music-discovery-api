@@ -8,3 +8,5 @@ httpx
 PyJWT
 cryptography
 python-multipart
+slowapi
+python-json-logger

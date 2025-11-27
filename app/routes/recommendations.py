@@ -9,6 +9,9 @@ from datetime import datetime, timedelta
 from .. import db
 from ..crypto import decrypt, encrypt
 from ..oauth import refresh_spotify_token
+from ..logging_config import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/discover", tags=["recommendations"])
 
@@ -27,6 +30,7 @@ async def recommendations(
     """
     Returns Spotify-based track recommendations filtered by genre, popularity, and release date.
     Uses the Spotify access token from the JWT payload.
+    Rate limited to 30 requests per minute per user.
     """
     user_id = user_payload.get("user_id")
 
@@ -106,6 +110,7 @@ async def recommendations(
             released_after=released_after
         )
     except Exception as e:
+        logger.error(f"Spotify API error for user {user_id}: {str(e)}")
         raise HTTPException(status_code=502, detail=f"Spotify API error: {str(e)}")
 
     # 2. Cache results

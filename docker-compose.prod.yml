@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+      - SPOTIFY_REDIRECT_URI=${SPOTIFY_REDIRECT_URI}
+      - JWT_SECRET=${JWT_SECRET}
+      - CRYPTO_KEY=${CRYPTO_KEY}
+      - DYNAMODB_TABLE=${DYNAMODB_TABLE:-playlists}
+      - DYNAMODB_USERS_TABLE=${DYNAMODB_USERS_TABLE:-users}
+      - DYNAMODB_REGION=${DYNAMODB_REGION:-us-east-1}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - app-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis-data:/data
+    networks:
+      - app-network
+
+volumes:
+  redis-data:
+
+networks:
+  app-network:
+    driver: bridge

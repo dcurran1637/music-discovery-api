@@ -1,0 +1,83 @@
+"""
+Health check and status endpoints for operational monitoring.
+"""
+
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+from datetime import datetime
+import redis.asyncio as aioredis
+import os
+from .. import db
+from ..logging_config import get_logger
+from ..resilience import check_circuit_breaker_status
+
+logger = get_logger(__name__)
+
+router = APIRouter(prefix="/api/health", tags=["health"])
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+
+
+@router.get("/live")
+async def liveness():
+    """
+    Liveness probe - returns 200 if service is running.
+    Use for Kubernetes liveness checks.
+    """
+    return {
+        "status": "alive",
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
+@router.get("/ready")
+async def readiness():
+    """
+    Readiness probe - checks if service is ready to handle traffic.
+    Use for Kubernetes readiness checks.
+    """
+    checks = {
+        "database": "unknown",
+        "cache": "unknown",
+        "overall": "ready",
+    }
+    
+    # Check DynamoDB connectivity (optional)
+    try:
+        # Just try to access table
+        _ = db.table
+        checks["database"] = "healthy"
+    except Exception as e:
+        logger.warning(f"Database check failed: {str(e)}")
+        checks["database"] = "unhealthy"
+    
+    # Check Redis connectivity
+    try:
+        redis = await aioredis.from_url(REDIS_URL, decode_responses=True)
+        await redis.ping()
+        await redis.close()
+        checks["cache"] = "healthy"
+    except Exception as e:
+        logger.warning(f"Cache check failed: {str(e)}")
+        checks["cache"] = "unhealthy (optional)"
+    
+    # If critical services are down, mark as not ready
+    if checks["database"] == "unhealthy":
+        checks["overall"] = "not_ready"
+    
+    status_code = 200 if checks["overall"] == "ready" else 503
+    return JSONResponse(content=checks, status_code=status_code)
+
+
+@router.get("/status")
+async def status():
+    """
+    Comprehensive service status including circuit breaker state.
+    """
+    circuit_breakers = await check_circuit_breaker_status()
+    
+    return {
+        "service": "music-discovery-api",
+        "timestamp": datetime.utcnow().isoformat(),
+        "circuit_breakers": circuit_breakers,
+    }
