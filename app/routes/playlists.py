@@ -13,7 +13,8 @@ def create_playlist(payload: schemas.PlaylistCreate, authorization: Optional[str
     elif x_api_key:
         # validate API key
         auth.require_write_api_key(x_api_key)
-        user_id = "user_demo_1"
+        user_id = user_payload.get("user_id")
+
     else:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing auth")
 

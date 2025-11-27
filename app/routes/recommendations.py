@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/discover", tags=["recommendations"])
 
-# Redis setup (optional caching)
+# Redis setup
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 CACHE_TTL = 300  # seconds
