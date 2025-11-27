@@ -136,3 +136,21 @@ async def get_spotify_recommendations(
         filtered_tracks.append(track_info)
 
     return filtered_tracks
+
+async def spotify_search_artists(query: str):
+    """
+    Search artists using Spotify API.
+    Returns a list of raw artist objects.
+    """
+    token = await get_access_token()
+    url = "https://api.spotify.com/v1/search"
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            url,
+            params={"q": query, "type": "artist", "limit": 20},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+
+    data = response.json()
+    return data.get("artists", {}).get("items", [])

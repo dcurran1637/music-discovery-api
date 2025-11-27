@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 import os
 import json
 import redis.asyncio as aioredis
-from ..spotify_client import get_artist
+from typing import List
+from ..spotify_client import get_artist, spotify_search_artists
 
 router = APIRouter(prefix="/api/artists", tags=["artists"])
 
@@ -42,3 +43,58 @@ async def get_artist_info(artist_id: str):
         pass
 
     return result
+
+
+# -------------------------------------------------------------
+# NEW ENDPOINT: Get artists based on top genres
+# -------------------------------------------------------------
+@router.get("/by-genres/")
+async def get_artists_by_genres(genres: List[str] = Query(...)):
+    """
+    Returns recommended artists based on user's top genres.
+    """
+    if not genres:
+        raise HTTPException(status_code=400, detail="At least one genre is required.")
+
+    cache_key = f"artists:genres:{'-'.join(sorted(genres))}"
+
+    # Try cache
+    try:
+        redis = await aioredis.from_url(REDIS_URL, decode_responses=True)
+        cached = await redis.get(cache_key)
+        if cached:
+            await redis.close()
+            return json.loads(cached)
+        await redis.close()
+    except Exception:
+        pass
+
+    # Gather artists from Spotify search
+    found_artists = {}
+
+    for genre in genres:
+        search_results = await spotify_search_artists(f"genre:{genre}")
+
+        for artist in search_results:
+            artist_id = artist.get("id")
+            if artist_id not in found_artists:
+                found_artists[artist_id] = {
+                    "id": artist_id,
+                    "name": artist.get("name"),
+                    "genres": artist.get("genres", []),
+                    "images": artist.get("images", []),
+                    "followers": artist.get("followers", {}).get("total"),
+                    "external_urls": artist.get("external_urls", {}),
+                }
+
+    final_results = list(found_artists.values())
+
+    # Save to cache
+    try:
+        redis = await aioredis.from_url(REDIS_URL, decode_responses=True)
+        await redis.set(cache_key, json.dumps(final_results), ex=300)
+        await redis.close()
+    except Exception:
+        pass
+
+    return final_results
