@@ -41,7 +41,7 @@ pip install -r requirements.txt
 redis-server
 
 ### 5. start the api server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --reload
 
 ###API Endpoints Overview
 /api/discover/recommendations
