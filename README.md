@@ -1,61 +1,77 @@
-# music-discovery-api
-How to use the API (quick)
---------------------------
-1. Install dependencies and set environment variables:
+# Music Discovery API
+
+A FastAPI-based backend for discovering Spotify tracks and artists, managing playlists, and generating personalized recommendations. Supports caching via Redis, JWT authentication, and Spotify API integration.
+
+## Features
+
+- **Spotify Integration**: Fetch artist and track metadata, user top artists/tracks, and recommendations.
+- **Playlist Management**: Create, update, delete playlists and manage tracks.
+- **User Authentication**: JWT-based authentication with optional API key fallback for legacy/demo usage.
+- **Caching**: Redis-based caching for tracks, artists, and recommendations to improve performance.
+- **Recommendation Engine**: Generates personalized recommendations based on user top genres, artists, and tracks.
+
+---
+
+## Requirements
+
+- Python 3.11+
+- Redis (default at `redis://localhost:6379`)
+- Spotify Developer account credentials (Client ID & Client Secret)
+- Optional: `.env` file for environment variables
+
+---
+
+## Setup
+
+### 1. Clone the repository
 
 ```bash
+git clone https://github.com/yourusername/music-discovery-api.git
+cd music-discovery-api
+
+### 2. Create a virtual environment
+python -m venv venv
+source venv/bin/activate   # Linux / macOS
+venv\Scripts\activate      # Windows
+
+### 3. instal dependencies
 pip install -r requirements.txt
-export SPOTIFY_CLIENT_ID="d589749d63f14861bfdb5a46e66d9826"
-export SPOTIFY_CLIENT_SECRET="6160cb16978d46d2b9f9df75c8465cb1"
-export SPOTIFY_REDIRECT_URI="http://127.0.0.1:8000/api/auth/callback"
-export JWT_SECRET="67bd32444f83f1ba"
-```
 
-2. Start the server:
+### 4. run redis
+redis-server
 
-```bash
-python -m uvicorn app.main:app --reload
-```
+### 5. start the api server
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-3. Authenticate a user with Spotify (Authorization Code Flow):
+###API Endpoints Overview
+/api/discover/recommendations
 
-- Open in a browser (or `curl -L`) to begin login and authorize the app:
+Returns Spotify track recommendations for the authenticated user.
 
-```text
-GET http://127.0.0.1:8000/api/auth/login?user_id=<your_user_id>
-```
+Optional query params: genres, min_popularity, released_after.
 
-- After authorizing, Spotify redirects to `/api/auth/callback?code=...&state=...`. The server exchanges that `code` and returns a JSON object containing a JWT in `access_token`.
+Requires Authorization: Bearer <JWT>.
 
-4. Use the returned JWT to call protected endpoints. Add this header to requests:
+/api/artists/{artist_id}
 
-```
-Authorization: Bearer <jwt_token>
-```
+Returns artist metadata, including genres and images.
 
-Example: Get recommendations filtered by genre, popularity and release date
+Requires JWT authentication.
 
-```bash
-curl -H "Authorization: Bearer <jwt_token>" \
-	"http://127.0.0.1:8000/api/discover/recommendations?genres=rock,pop&min_popularity=60&released_after=2023-01-01"
-```
+/api/artists/by-genres/
 
-Example: Get current Spotify profile (using the JWT returned at callback)
+Returns artists matching specified genres.
 
-```bash
-curl "http://127.0.0.1:8000/api/auth/me?authorization=Bearer%20<jwt_token>"
-```
+Requires JWT authentication.
 
-Testing
--------
-Run the test suite:
+/api/tracks/{track_id}
 
-```bash
-python -m pytest tests/ -v
-```
+Returns track metadata and first artist's genres.
 
-Notes
------
-- The development redirect URI must match the Spotify app setting exactly: `http://127.0.0.1:8000/api/auth/callback`.
-- In production use HTTPS and secure token storage (HttpOnly cookies or server-side storage). Rotate and refresh tokens as needed.
+Optional Spotify token can be provided.
 
+/api/playlists
+
+CRUD operations for user playlists.
+
+Supports JWT or demo API key fallback.
