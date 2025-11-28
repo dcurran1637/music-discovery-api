@@ -22,7 +22,7 @@ python -m uvicorn app.main:app --reload
 - Open in a browser (or `curl -L`) to begin login and authorize the app:
 
 ```text
-GET http://localhost:8000/api/auth/login?user_id=<your_user_id>
+GET http://127.0.0.1:8000/api/auth/login?user_id=<your_user_id>
 ```
 
 - After authorizing, Spotify redirects to `/api/auth/callback?code=...&state=...`. The server exchanges that `code` and returns a JSON object containing a JWT in `access_token`.
@@ -37,13 +37,13 @@ Example: Get recommendations filtered by genre, popularity and release date
 
 ```bash
 curl -H "Authorization: Bearer <jwt_token>" \
-	"http://localhost:8000/api/discover/recommendations?genres=rock,pop&min_popularity=60&released_after=2023-01-01"
+	"http://127.0.0.1:8000/api/discover/recommendations?genres=rock,pop&min_popularity=60&released_after=2023-01-01"
 ```
 
 Example: Get current Spotify profile (using the JWT returned at callback)
 
 ```bash
-curl "http://localhost:8000/api/auth/me?authorization=Bearer%20<jwt_token>"
+curl "http://127.0.0.1:8000/api/auth/me?authorization=Bearer%20<jwt_token>"
 ```
 
 Testing
@@ -56,6 +56,6 @@ python -m pytest tests/ -v
 
 Notes
 -----
-- The development redirect URI must match the Spotify app setting exactly: `http://localhost:8000/api/auth/callback`.
+- The development redirect URI must match the Spotify app setting exactly: `http://127.0.0.1:8000/api/auth/callback`.
 - In production use HTTPS and secure token storage (HttpOnly cookies or server-side storage). Rotate and refresh tokens as needed.
 

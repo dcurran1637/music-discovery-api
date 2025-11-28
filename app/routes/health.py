@@ -22,7 +22,7 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 async def liveness():
     """
     Liveness probe - returns 200 if service is running.
-    Use for Kubernetes liveness checks.
+    Useful for Kubernetes liveness checks.
     """
     return {
         "status": "alive",
@@ -34,23 +34,22 @@ async def liveness():
 async def readiness():
     """
     Readiness probe - checks if service is ready to handle traffic.
-    Use for Kubernetes readiness checks.
+    Useful for Kubernetes readiness checks.
     """
     checks = {
         "database": "unknown",
         "cache": "unknown",
         "overall": "ready",
     }
-    
-    # Check DynamoDB connectivity (optional)
+
+    # Check database connectivity (DynamoDB or other)
     try:
-        # Just try to access table
-        _ = db.table
+        _ = db.table  # Try accessing table
         checks["database"] = "healthy"
     except Exception as e:
         logger.warning(f"Database check failed: {str(e)}")
         checks["database"] = "unhealthy"
-    
+
     # Check Redis connectivity
     try:
         redis = await aioredis.from_url(REDIS_URL, decode_responses=True)
@@ -59,12 +58,12 @@ async def readiness():
         checks["cache"] = "healthy"
     except Exception as e:
         logger.warning(f"Cache check failed: {str(e)}")
-        checks["cache"] = "unhealthy (optional)"
-    
-    # If critical services are down, mark as not ready
-    if checks["database"] == "unhealthy":
+        checks["cache"] = "unhealthy"
+
+    # If any critical service is unhealthy, mark overall as not ready
+    if checks["database"] != "healthy":
         checks["overall"] = "not_ready"
-    
+
     status_code = 200 if checks["overall"] == "ready" else 503
     return JSONResponse(content=checks, status_code=status_code)
 
@@ -74,8 +73,12 @@ async def status():
     """
     Comprehensive service status including circuit breaker state.
     """
-    circuit_breakers = await check_circuit_breaker_status()
-    
+    try:
+        circuit_breakers = await check_circuit_breaker_status()
+    except Exception as e:
+        logger.error(f"Circuit breaker status check failed: {str(e)}")
+        circuit_breakers = {}
+
     return {
         "service": "music-discovery-api",
         "timestamp": datetime.utcnow().isoformat(),
