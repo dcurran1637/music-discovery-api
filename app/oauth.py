@@ -86,6 +86,7 @@ async def generate_auth_url(user_id: str) -> tuple[str, str]:
             "user-read-private",
             "user-read-email",
             "user-library-read",
+            "user-top-read",
             "playlist-modify-public",
             "playlist-modify-private",
             "user-read-playback-state",
@@ -214,7 +215,9 @@ async def refresh_spotify_token(refresh_token: str) -> Dict[str, Any]:
 def create_jwt_token(
     user_id: str,
     session_id: str,
-    expires_in: int = 3600
+    expires_in: int = 3600,
+    spotify_access_token: str | None = None,
+    spotify_refresh_token: str | None = None,
 ) -> str:
     """
     Create JWT token containing Spotify access token.
@@ -234,6 +237,10 @@ def create_jwt_token(
         "exp": datetime.utcnow() + timedelta(seconds=expires_in),
         "iat": datetime.utcnow(),
     }
+    if spotify_access_token:
+        payload["spotify_access_token"] = spotify_access_token
+    if spotify_refresh_token:
+        payload["spotify_refresh_token"] = spotify_refresh_token
     
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return token
