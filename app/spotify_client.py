@@ -2,32 +2,52 @@ import os
 import base64
 import time
 import httpx
+import logging
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from collections import defaultdict, Counter
 
 SPOTIFY_API_BASE = "https://api.spotify.com/v1"
-CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
-CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+logger = logging.getLogger(__name__)
 
-# client credentials fallback token
 CLIENT_TOKEN: Optional[str] = None
 TOKEN_EXPIRES: float = 0
 MAX_SEEDS = 5
-DEFAULT_GENRES = ["pop", "rock", "hip-hop"]
+DEFAULT_GENRES = ["pop", "rock", "dance", "edm", "indie"]
+FALLBACK_ARTISTS = ["6XyY86QOPPrYVGvF9ch6wz", "4IliztYDlfMvzQzbx50o60"] 
+FALLBACK_TRACKS = ["4Yf5bqU3NK4kNOypcrLYwU", "3E619cvUK3bgsm4xH9A34H"]  
+DEFAULT_MARKET = os.getenv("SPOTIFY_MARKET") or "GB"
+SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
+SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+
+
+async def get_available_genre_seeds(spotify_token: str) -> List[str]:
+    """Fetch Spotify-supported genre seeds for recommendations."""
+    if not spotify_token:
+        return []
+    url = f"{SPOTIFY_API_BASE}/recommendations/available-genre-seeds"
+    headers = {"Authorization": f"Bearer {spotify_token}"}
+    async with httpx.AsyncClient() as client:
+        r = await client.get(url, headers=headers, timeout=10)
+        if r.status_code == 401:
+            raise Exception("Spotify user token expired")
+        if r.status_code != 200:
+            return []
+        return r.json().get("genres", [])
 
 
 async def get_spotify_token() -> Optional[str]:
-    """
-    Get a Spotify token via client credentials (for non-user-specific requests)
-    """
+    """Get a Spotify token via client credentials (non-user-specific requests)."""
     global CLIENT_TOKEN, TOKEN_EXPIRES
+    client_id = os.getenv("SPOTIFY_CLIENT_ID")
+    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        return None
     if CLIENT_TOKEN and TOKEN_EXPIRES - 30 > time.time():
         return CLIENT_TOKEN
-    if not CLIENT_ID or not CLIENT_SECRET:
-        return None
 
-    auth_header = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
+    auth_header = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
     async with httpx.AsyncClient() as client:
         r = await client.post(
             "https://accounts.spotify.com/api/token",
@@ -43,32 +63,30 @@ async def get_spotify_token() -> Optional[str]:
 
 
 async def get_user_top_artists(
-    access_token: str,
-    limit: int = 20,
-    time_range: str = "medium_term"
+    access_token: str, limit: int = 20, time_range: str = "medium_term"
 ) -> List[Dict[str, Any]]:
     url = f"{SPOTIFY_API_BASE}/me/top/artists"
     headers = {"Authorization": f"Bearer {access_token}"}
     params = {"limit": limit, "time_range": time_range}
-
     async with httpx.AsyncClient() as client:
         r = await client.get(url, headers=headers, params=params, timeout=10)
+        if r.status_code == 401:
+            raise Exception("Spotify user token expired")
         if r.status_code != 200:
             return []
         return r.json().get("items", [])
 
 
 async def get_user_top_tracks(
-    access_token: str,
-    limit: int = 20,
-    time_range: str = "medium_term"
+    access_token: str, limit: int = 20, time_range: str = "medium_term"
 ) -> List[Dict[str, Any]]:
     url = f"{SPOTIFY_API_BASE}/me/top/tracks"
     headers = {"Authorization": f"Bearer {access_token}"}
     params = {"limit": limit, "time_range": time_range}
-
     async with httpx.AsyncClient() as client:
         r = await client.get(url, headers=headers, params=params, timeout=10)
+        if r.status_code == 401:
+            raise Exception("Spotify user token expired")
         if r.status_code != 200:
             return []
         return r.json().get("items", [])
@@ -78,7 +96,6 @@ async def get_artist(artist_id: str, spotify_token: Optional[str] = None) -> Opt
     token = spotify_token or await get_spotify_token()
     if not token:
         return None
-
     url = f"{SPOTIFY_API_BASE}/artists/{artist_id}"
     headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient() as client:
@@ -92,7 +109,6 @@ async def get_track(track_id: str, spotify_token: Optional[str] = None) -> Optio
     token = spotify_token or await get_spotify_token()
     if not token:
         return None
-
     url = f"{SPOTIFY_API_BASE}/tracks/{track_id}"
     headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient() as client:
@@ -102,101 +118,102 @@ async def get_track(track_id: str, spotify_token: Optional[str] = None) -> Optio
         return r.json()
 
 
-async def spotify_search_artists(query: str, spotify_token: str):
-    """
-    Search for artists on Spotify using a given query.
-    
-    Args:
-        query: Search query string (e.g., "genre:rock").
-        spotify_token: Valid Spotify access token (user or client credentials)
-        
-    Returns:
-        List of artist objects from Spotify API.
-    """
+async def spotify_search_artists(query: str, spotify_token: str) -> List[Dict[str, Any]]:
     if not spotify_token:
         return []
-
     url = f"{SPOTIFY_API_BASE}/search"
-    params = {
-        "q": query,
-        "type": "artist",
-        "limit": 20
-    }
-    headers = {
-        "Authorization": f"Bearer {spotify_token}"
-    }
-
+    params = {"q": query, "type": "artist", "limit": 20}
+    headers = {"Authorization": f"Bearer {spotify_token}"}
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(url, headers=headers, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            return data.get("artists", {}).get("items", [])
+            r = await client.get(url, headers=headers, params=params, timeout=10)
+            r.raise_for_status()
+            return r.json().get("artists", {}).get("items", [])
         except Exception:
             return []
 
 
-
-
 async def get_spotify_recommendations(
     spotify_token: str,
-    limit: int = 20,
-    genres: Optional[List[str]] = None,
-    seed_artists: Optional[List[str]] = None,
-    seed_tracks: Optional[List[str]] = None,
+    limit: int = 10,
+    genres: Optional[list[str]] = None,
+    seed_artists: Optional[list[str]] = None,
+    seed_tracks: Optional[list[str]] = None,
     min_popularity: Optional[int] = None,
-    released_after: Optional[str] = None
-) -> List[Dict[str, Any]]:
+    market_override: Optional[str] = None,
+    return_meta: bool = False,
+    refresh_token: Optional[str] = None,
+    time_range: str = "medium_term"
+) -> list[dict] | tuple[list[dict], dict]:
+    """
+    Custom recommendation system since Spotify's /recommendations endpoint returns 404.
+    Uses user's top tracks/artists and searches to generate recommendations.
+    """
     if not spotify_token:
-        return []
+        return ([], {}) if return_meta else []
 
-    if not genres:
-        top_artists = await get_user_top_artists(spotify_token, limit=MAX_SEEDS)
-        genre_counter = Counter()
-        for artist in top_artists:
-            for g in artist.get("genres", []):
-                genre_counter[g.lower()] += 1
-        genres = [g for g, _ in genre_counter.most_common(MAX_SEEDS)]
-        if not genres:
-            genres = DEFAULT_GENRES
+    try:
+        # Strategy: Use user's top artists and tracks to generate recommendations
+        tracks = []
+        fallback_used = "custom_algorithm"
+        seeds_used = {}
+        
+        # If specific genres requested, search for those
+        if genres is not None and len(genres) > 0:
+            seeds_used["seed_genres"] = ",".join(genres)
+            tracks = await _search_tracks_by_genres(spotify_token, genres, limit, min_popularity)
+        
+        # If specific artists requested, get their top tracks
+        elif seed_artists:
+            seeds_used["seed_artists"] = ",".join(seed_artists)
+            tracks = await _get_tracks_from_artists(spotify_token, seed_artists, limit, min_popularity)
+        
+        # If specific tracks requested, find related tracks (via artist of those tracks)
+        elif seed_tracks:
+            seeds_used["seed_tracks"] = ",".join(seed_tracks)
+            tracks = await _get_related_tracks(spotify_token, seed_tracks, limit, min_popularity)
+        
+        # Default: Use user's top artists to extract genres
+        else:
+            # Get user's top artists to extract genres
+            top_artists = await get_user_top_artists(spotify_token, limit=10, time_range=time_range)
+            user_genres = []
+            for artist in top_artists:
+                user_genres.extend(artist.get("genres", []))
+            
+            # Use unique genres from user's top artists
+            unique_genres = list(set(user_genres))[:MAX_SEEDS]
+            if unique_genres:
+                seeds_used["seed_genres"] = ",".join(unique_genres)
+                tracks = await _search_tracks_by_genres(spotify_token, unique_genres, limit, min_popularity)
+            else:
+                # Fallback to top tracks if no genres found
+                top_tracks = await get_user_top_tracks(spotify_token, limit=limit, time_range=time_range)
+                tracks = top_tracks
+                seeds_used["source"] = "user_top_tracks"
+        
+        # Shuffle for variety
+        import random
+        random.shuffle(tracks)
+        tracks = tracks[:limit]
 
-    seeds = defaultdict(list)
-    seeds["seed_genres"] = genres[:MAX_SEEDS]
-    if seed_artists:
-        seeds["seed_artists"] = seed_artists[:MAX_SEEDS]
-    if seed_tracks:
-        seeds["seed_tracks"] = seed_tracks[:MAX_SEEDS]
+    except Exception as e:
+        logger.warning(f"Custom recommendations failed: {e}")
+        tracks = []
+        fallback_used = "fallback_used"
+        seeds_used = {}
+        if seed_artists:
+            seeds_used["seed_artists"] = ",".join(seed_artists)
+        if seed_tracks:
+            seeds_used["seed_tracks"] = ",".join(seed_tracks)
+        if genres:
+            seeds_used["seed_genres"] = ",".join(genres)
 
-    query_params = {"limit": str(limit)}
-    query_params.update({k: ",".join(v) for k, v in seeds.items() if v})
-
-    url = f"{SPOTIFY_API_BASE}/recommendations"
-    headers = {"Authorization": f"Bearer {spotify_token}"}
-
-    async with httpx.AsyncClient() as client:
-        r = await client.get(url, headers=headers, params=query_params, timeout=10)
-        if r.status_code != 200:
-            return []
-
-        tracks = r.json().get("tracks", [])
-
+    # Filter by popularity
     filtered = []
     for track in tracks:
         if min_popularity is not None and track.get("popularity", 0) < min_popularity:
             continue
-        if released_after:
-            try:
-                track_date = track["album"]["release_date"]
-                if len(track_date) == 4:
-                    track_date += "-01-01"
-                elif len(track_date) == 7:
-                    track_date += "-01"
-                track_dt = datetime.strptime(track_date, "%Y-%m-%d")
-                if track_dt < datetime.strptime(released_after, "%Y-%m-%d"):
-                    continue
-            except Exception:
-                pass
-
         filtered.append({
             "trackId": track["id"],
             "title": track["name"],
@@ -206,4 +223,119 @@ async def get_spotify_recommendations(
             "previewUrl": track.get("preview_url"),
         })
 
+    if return_meta:
+        meta = {"market": market_override, "fallback": fallback_used, "seedsUsed": seeds_used}
+        return filtered, meta
+
     return filtered
+
+async def refresh_spotify_token(refresh_token: str) -> str:
+    """
+    Use the Spotify refresh token to get a new access token.
+    Returns the new access token.
+    """
+    if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
+        raise RuntimeError("Missing Spotify client credentials in environment")
+
+    data = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": SPOTIFY_CLIENT_ID,
+        "client_secret": SPOTIFY_CLIENT_SECRET,
+    }
+    async with httpx.AsyncClient() as client:
+        r = await client.post(SPOTIFY_TOKEN_URL, data=data, timeout=10)
+        r.raise_for_status()
+        return r.json()["access_token"]
+
+
+async def _search_tracks_by_genres(
+    spotify_token: str,
+    genres: list[str],
+    limit: int,
+    min_popularity: Optional[int] = None
+) -> list[dict]:
+    """Search for tracks matching the given genres."""
+    tracks = []
+    headers = {"Authorization": f"Bearer {spotify_token}"}
+    
+    async with httpx.AsyncClient() as client:
+        for genre in genres[:3]:  # Limit to 3 genres to avoid too many requests
+            try:
+                # Search for tracks with genre in query
+                params = {
+                    "q": f"genre:{genre}",
+                    "type": "track",
+                    "limit": limit,
+                    "market": "from_token"
+                }
+                r = await client.get(f"{SPOTIFY_API_BASE}/search", headers=headers, params=params, timeout=10)
+                if r.status_code == 200:
+                    items = r.json().get("tracks", {}).get("items", [])
+                    tracks.extend(items)
+            except Exception as e:
+                logger.warning(f"Genre search failed for {genre}: {e}")
+                continue
+    
+    return tracks[:limit * 2]  # Return more than needed for filtering
+
+
+async def _get_tracks_from_artists(
+    spotify_token: str,
+    artist_ids: list[str],
+    limit: int,
+    min_popularity: Optional[int] = None
+) -> list[dict]:
+    """Get top tracks from the specified artists."""
+    tracks = []
+    headers = {"Authorization": f"Bearer {spotify_token}"}
+    
+    async with httpx.AsyncClient() as client:
+        for artist_id in artist_ids[:5]:  # Limit to 5 artists
+            try:
+                # Get artist's top tracks
+                r = await client.get(
+                    f"{SPOTIFY_API_BASE}/artists/{artist_id}/top-tracks",
+                    headers=headers,
+                    params={"market": "from_token"},
+                    timeout=10
+                )
+                if r.status_code == 200:
+                    items = r.json().get("tracks", [])
+                    tracks.extend(items)
+            except Exception as e:
+                logger.warning(f"Failed to get tracks for artist {artist_id}: {e}")
+                continue
+    
+    return tracks
+
+
+async def _get_related_tracks(
+    spotify_token: str,
+    track_ids: list[str],
+    limit: int,
+    min_popularity: Optional[int] = None
+) -> list[dict]:
+    """Get related tracks by finding the artists of the seed tracks and getting their top tracks."""
+    tracks = []
+    headers = {"Authorization": f"Bearer {spotify_token}"}
+    artist_ids = set()
+    
+    async with httpx.AsyncClient() as client:
+        # Get the artists from seed tracks
+        for track_id in track_ids[:5]:
+            try:
+                r = await client.get(f"{SPOTIFY_API_BASE}/tracks/{track_id}", headers=headers, timeout=10)
+                if r.status_code == 200:
+                    track_data = r.json()
+                    for artist in track_data.get("artists", [])[:2]:
+                        artist_ids.add(artist["id"])
+            except Exception as e:
+                logger.warning(f"Failed to get track {track_id}: {e}")
+                continue
+        
+        # Get tracks from those artists
+        if artist_ids:
+            tracks = await _get_tracks_from_artists(spotify_token, list(artist_ids), limit, min_popularity)
+    
+    return tracks

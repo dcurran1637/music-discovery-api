@@ -4,58 +4,57 @@ import os
 import json
 import redis.asyncio as aioredis
 from ..spotify_client import get_artist, spotify_search_artists
-from ..crypto import decrypt
-from .. import db, auth
+from ..oauth import get_user_profile
+from .. import auth
 
 router = APIRouter(prefix="/api/artists", tags=["artists"])
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 CACHE_TTL = 300  # 5 minutes
 
-# Demo user fallback
-DEMO_USER_ID = os.getenv("DEMO_USER_ID", "real_demo_user_id")  # replace with actual demo user ID
-
-def resolve_user_and_token(authorization: Optional[str], require_spotify: bool = True):
-    """
-    Returns (user_id, spotify_token) tuple.
-    If authorization missing/invalid, uses DEMO_USER_ID for read-only access.
-    """
-    user_id = DEMO_USER_ID
+async def authenticate_user(authorization: Optional[str]):
+    """Authenticate user and return (user_id, spotify_token) tuple."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+    
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authorization header must start with 'Bearer '")
+    
+    token_str = authorization.split(" ")[1]
+    
+    # Try to decode as JWT first (for backward compatibility)
     spotify_token = None
-
-    if authorization:
-        token = authorization.split(" ")[-1] if authorization.startswith("Bearer ") else authorization
+    user_id = None
+    
+    try:
+        user_payload = auth.decode_jwt_token(token_str)
+        user_id = user_payload.get("user_id")
+        spotify_token = user_payload.get("spotify_access_token")
+        
+        if spotify_token:
+            return user_id, spotify_token
+    except:
+        # Not a JWT or invalid JWT - treat as raw Spotify token
+        pass
+    
+    # If not a JWT or JWT doesn't contain Spotify token, treat token_str as Spotify access token
+    if not spotify_token:
+        spotify_token = token_str
         try:
-            user_payload = auth.verify_jwt_token(token)
-            user_id = user_payload.get("user_id")
-            session_id = user_payload.get("session_id")
-            # Resolve Spotify token from session
-            if require_spotify and session_id:
-                session = db.get_session_tokens(session_id)
-                if session:
-                    try:
-                        spotify_token = decrypt(session.get("access_token", ""))
-                    except Exception:
-                        spotify_token = None
-            # Fallback to user tokens
-            if require_spotify and not spotify_token:
-                user_tokens = db.get_user_tokens(user_id)
-                if user_tokens:
-                    try:
-                        spotify_token = decrypt(user_tokens.get("access_token", ""))
-                    except Exception:
-                        spotify_token = None
-            # JWT embedded Spotify token
-            if require_spotify and not spotify_token:
-                spotify_token = user_payload.get("spotify_access_token")
-        except Exception:
-            if require_spotify:
-                raise HTTPException(status_code=401, detail="Invalid token")
-            # else, fallback to DEMO_USER_ID
-    elif require_spotify:
-        raise HTTPException(status_code=401, detail="Missing auth for Spotify access")
-
-    return user_id, spotify_token
+            profile = await get_user_profile(spotify_token)
+            user_id = profile.get("id")
+            
+            if not user_id:
+                raise HTTPException(status_code=401, detail="Invalid Spotify token: no user ID in profile")
+            
+            return user_id, spotify_token
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=401, detail="Authentication failed")
+    
+    raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 # ----------------------------
 # Get artist info by ID
@@ -65,9 +64,7 @@ async def get_artist_info(
     artist_id: str,
     authorization: Optional[str] = Header(None, description="Bearer JWT token")
 ):
-    user_id, spotify_token = resolve_user_and_token(authorization)
-    if not spotify_token:
-        raise HTTPException(status_code=401, detail="Spotify token unavailable for user")
+    user_id, spotify_token = await authenticate_user(authorization)
 
     cache_key = f"artist:{artist_id}"
     try:
@@ -112,7 +109,7 @@ async def get_artists_by_genres(
     if not genres:
         raise HTTPException(status_code=400, detail="At least one genre is required.")
 
-    user_id, spotify_token = resolve_user_and_token(authorization)
+    user_id, spotify_token = await authenticate_user(authorization)
     if not spotify_token:
         raise HTTPException(status_code=401, detail="Spotify token unavailable for user")
 

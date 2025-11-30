@@ -2,7 +2,7 @@
 OAuth 2.0 authentication routes for Spotify.
 """
 
-from fastapi import APIRouter, Query, HTTPException, status, Depends
+from fastapi import APIRouter, Query, HTTPException, status, Depends, Header
 from fastapi.responses import RedirectResponse
 from typing import Optional
 import uuid
@@ -27,10 +27,21 @@ router = APIRouter(prefix="/api/auth", tags=["authentication"])
 
 
 @router.get("/login")
-async def login(user_id: str = Query(..., description="User ID")):
-    """Redirect user to Spotify OAuth authorization page"""
+async def login(
+    user_id: str = Query(..., description="User ID"),
+    json: bool = Query(False, description="Return JSON instead of redirect")
+):
+    """Redirect user to Spotify OAuth authorization page (or return URL as JSON)"""
     try:
         auth_url, state = await generate_auth_url(user_id)
+        
+        if json:
+            return {
+                "authorization_url": auth_url,
+                "state": state,
+                "instructions": "Open this URL in your browser to authenticate"
+            }
+        
         return RedirectResponse(url=auth_url)
     except HTTPException as e:
         raise e
@@ -40,10 +51,37 @@ async def login(user_id: str = Query(..., description="User ID")):
 
 
 @router.get("/callback")
-async def callback(code: Optional[str] = Query(None), state: str = Query(...)):
+async def callback(
+    code: Optional[str] = Query(None),
+    state: Optional[str] = Query(None),
+    error: Optional[str] = Query(None)
+):
     """Handle Spotify OAuth callback and return JWT session token"""
+    
+    # Log what we received for debugging
+    logger.info(f"Callback received - code: {'present' if code else 'missing'}, state: {'present' if state else 'missing'}, error: {error}")
+    
+    # Handle user denial
+    if error:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Spotify authorization failed: {error}"
+        )
+    
+    # Validate required parameters
     if not code:
-        raise HTTPException(status_code=400, detail="Missing authorization code")
+        raise HTTPException(
+            status_code=400,
+            detail="Missing authorization code. Please complete the OAuth flow by visiting /api/auth/login?user_id=YOUR_USER_ID&json=true"
+        )
+    
+    if not state:
+        logger.warning("Callback missing state parameter - this may indicate a redirect URI mismatch in Spotify Dashboard")
+        raise HTTPException(
+            status_code=400,
+            detail="Missing state parameter. This usually means your Spotify App's redirect URI doesn't match. Please verify in Spotify Developer Dashboard that the redirect URI is set to: http://127.0.0.1:8000/api/auth/callback"
+        )
+    
     try:
         token_response = await exchange_code_for_token(code, state)
         user_id = token_response["user_id"]
@@ -57,17 +95,18 @@ async def callback(code: Optional[str] = Query(None), state: str = Query(...)):
         session_id = uuid.uuid4().hex
         db.put_session_tokens(session_id, user_id, enc_access, enc_refresh, expires_at)
 
-        # Create JWT referencing session id
-        jwt_token = create_jwt_token(user_id=user_id, session_id=session_id, expires_in=expires_in)
+        # Return Spotify access token directly
+        spotify_access_token = token_response.get("spotify_access_token")
 
         logger.info(f"Successful OAuth login for user {user_id}")
 
         return {
-            "access_token": jwt_token,
+            "access_token": spotify_access_token,
             "token_type": "bearer",
             "expires_in": expires_in,
             "user_id": user_id,
             "session_id": session_id,
+            "refresh_token": token_response.get("spotify_refresh_token"),
         }
     except HTTPException:
         raise
@@ -93,21 +132,22 @@ async def refresh_token(refresh_token: str = Query(...)):
 
 
 @router.get("/me")
-async def get_current_user(authorization: str = Query(..., description="Bearer JWT token")):
+async def get_current_user(authorization: str = Header(..., description="Bearer JWT token")):
     """Get current authenticated user's Spotify profile"""
     try:
-        if not authorization.startswith("Bearer "):
+        if not authorization.lower().startswith("bearer "):
             raise HTTPException(status_code=401, detail="Invalid authorization header format")
-        token = authorization.split(" ")[1]
+        token = authorization.split(" ", 1)[1]
 
         payload = verify_token(token)
         user_id = payload.get("user_id")
         session_id = payload.get("session_id")
 
-        spotify_token = None
+        # Prefer embedded token in JWT (stateless fallback)
+        spotify_token = payload.get("spotify_access_token")
 
         # Prefer session-scoped tokens
-        if session_id:
+        if not spotify_token and session_id:
             session = db.get_session_tokens(session_id)
             if session:
                 try:

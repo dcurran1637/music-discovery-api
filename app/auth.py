@@ -42,12 +42,9 @@ def decode_jwt_token(token: str) -> Dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
     user_id = payload.get("user_id")
-    session_id = payload.get("session_id")
-    spotify_token = payload.get("spotify_access_token")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing user_id")
-    if not session_id and not spotify_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing session_id or spotify_access_token")
+    # Allow tokens without session_id/spotify_token - they'll be looked up later
     return payload
 
 
