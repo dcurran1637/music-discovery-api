@@ -17,7 +17,11 @@ def test_create_playlist_success(monkeypatch):
     monkeypatch.setattr("app.db.create_playlist", fake_create)
 
     client = TestClient(app)
-    resp = client.post("/api/playlists", json={"name": "My List", "description": "desc"}, headers={"X-API-KEY": "demo_write_key_123"})
+    resp = client.post(
+        "/api/playlists",
+        json={"name": "My List", "description": "desc"},
+        headers={"X-API-KEY": "demo_write_key_123", "X-USER-ID": "user_demo_1"}
+    )
     assert resp.status_code == 201
     assert resp.json() == created
 
@@ -38,8 +42,9 @@ def test_list_playlists_returns_items(monkeypatch):
 
     monkeypatch.setattr("app.db.get_playlists_for_user", fake_list)
 
+    monkeypatch.setenv("WRITE_API_KEY", "demo_write_key_123")
     client = TestClient(app)
-    resp = client.get("/api/playlists")
+    resp = client.get("/api/playlists", headers={"X-API-KEY": "demo_write_key_123", "X-USER-ID": "user_demo_1"})
     assert resp.status_code == 200
     assert resp.json() == sample
 
@@ -52,7 +57,7 @@ def test_get_playlist_not_found(monkeypatch):
 
 
 def test_update_playlist_success(monkeypatch):
-    existing = {"id": "pl_1", "name": "Old", "description": "old"}
+    existing = {"id": "pl_1", "userId": "user_demo_1", "name": "Old", "description": "old"}
     updated = {"id": "pl_1", "name": "New", "description": "new"}
 
     monkeypatch.setattr("app.db.get_playlist", lambda pid: existing)
@@ -63,23 +68,30 @@ def test_update_playlist_success(monkeypatch):
     monkeypatch.setattr("app.db.update_playlist", fake_update)
     monkeypatch.setenv("WRITE_API_KEY", "demo_write_key_123")
     client = TestClient(app)
-    resp = client.put("/api/playlists/pl_1", json={"name": "New", "description": "new"}, headers={"X-API-KEY": "demo_write_key_123"})
+    resp = client.put(
+        "/api/playlists/pl_1",
+        json={"name": "New", "description": "new"},
+        headers={"X-API-KEY": "demo_write_key_123", "X-USER-ID": "user_demo_1"}
+    )
     assert resp.status_code == 200
     assert resp.json() == updated
 
 
 def test_delete_playlist_success(monkeypatch):
-    monkeypatch.setattr("app.db.get_playlist", lambda pid: {"id": pid})
+    monkeypatch.setattr("app.db.get_playlist", lambda pid: {"id": pid, "userId": "user_demo_1"})
     monkeypatch.setattr("app.db.delete_playlist", lambda pid: {"message": "ok"})
     monkeypatch.setenv("WRITE_API_KEY", "demo_write_key_123")
     client = TestClient(app)
-    resp = client.delete("/api/playlists/pl_1", headers={"X-API-KEY": "demo_write_key_123"})
+    resp = client.delete(
+        "/api/playlists/pl_1",
+        headers={"X-API-KEY": "demo_write_key_123", "X-USER-ID": "user_demo_1"}
+    )
     assert resp.status_code == 200
     assert resp.json() == {"message": "ok"}
 
 
 def test_add_remove_tracks(monkeypatch):
-    playlist = {"id": "pl_1", "tracks": []}
+    playlist = {"id": "pl_1", "userId": "user_demo_1", "tracks": []}
 
     monkeypatch.setattr("app.db.get_playlist", lambda pid: playlist)
 
@@ -92,10 +104,17 @@ def test_add_remove_tracks(monkeypatch):
 
     client = TestClient(app)
     track_payload = {"trackId": "t1", "title": "Song", "artist": "A"}
-    add_resp = client.post("/api/playlists/pl_1/tracks", json=track_payload, headers={"X-API-KEY": "demo_write_key_123"})
+    add_resp = client.post(
+        "/api/playlists/pl_1/tracks",
+        json=track_payload,
+        headers={"X-API-KEY": "demo_write_key_123", "X-USER-ID": "user_demo_1"}
+    )
     assert add_resp.status_code == 201
 
     # remove
     monkeypatch.setattr("app.db.remove_track", lambda pid, tid: {"id": pid, "tracks": []})
-    del_resp = client.delete("/api/playlists/pl_1/tracks/t1", headers={"X-API-KEY": "demo_write_key_123"})
+    del_resp = client.delete(
+        "/api/playlists/pl_1/tracks/t1",
+        headers={"X-API-KEY": "demo_write_key_123", "X-USER-ID": "user_demo_1"}
+    )
     assert del_resp.status_code == 200
