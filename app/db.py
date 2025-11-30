@@ -1,197 +1,325 @@
 import os
-import boto3
 import uuid
 from datetime import datetime
-from boto3.dynamodb.conditions import Key
-
-TABLE_NAME = os.getenv("DYNAMODB_TABLE", "playlists")
-DYNAMODB_ENDPOINT = os.getenv("DYNAMODB_ENDPOINT_URL") or None
-REGION = os.getenv("DYNAMODB_REGION", "us-east-1")
-
-if DYNAMODB_ENDPOINT:
-    dynamodb = boto3.resource("dynamodb", region_name=REGION, endpoint_url=DYNAMODB_ENDPOINT)
-else:
-    dynamodb = boto3.resource("dynamodb", region_name=REGION)
-
-table = dynamodb.Table(TABLE_NAME)
-USERS_TABLE = os.getenv("DYNAMODB_USERS_TABLE", "users")
-user_table = dynamodb.Table(USERS_TABLE)
+from typing import Optional, List, Dict
+from .database import SessionLocal, Playlist, UserToken
 
 
-def create_playlist(user_id, name, description=""):
-    now = datetime.utcnow().isoformat()
-    item = {
-        "id": str(uuid.uuid4()),
-        "userId": user_id,
-        "name": name,
-        "description": description,
-        "tracks": [],
-        "createdAt": now,
-        "updatedAt": now,
-    }
-    table.put_item(Item=item)
-    return item
-
-
-def get_playlists_for_user(user_id, genre_filter=None):
-    resp = table.query(
-        IndexName="userId-index",
-        KeyConditionExpression=Key("userId").eq(user_id)
-    )
-    items = resp.get("Items", [])
-    if genre_filter:
-        genres = set([g.strip().lower() for g in genre_filter.split(",")])
-        for it in items:
-            it["tracks"] = [t for t in it.get("tracks", []) if t.get("genre") and t["genre"].lower() in genres]
-    return items
-
-
-def get_playlist(playlist_id):
-    resp = table.get_item(Key={"id": playlist_id})
-    return resp.get("Item")
-
-
-def update_playlist(playlist_id, name=None, description=None):
-    update_expr = []
-    expr_values = {}
-    if name:
-        update_expr.append("name = :n")
-        expr_values[":n"] = name
-    if description:
-        update_expr.append("description = :d")
-        expr_values[":d"] = description
-
-    if not update_expr:
-        return get_playlist(playlist_id)
-
-    # always update updatedAt
-    update_expr.append("updatedAt = :u")
-    expr_values[":u"] = datetime.utcnow().isoformat()
-
-    response = table.update_item(
-        Key={"id": playlist_id},
-        UpdateExpression="SET " + ", ".join(update_expr),
-        ExpressionAttributeValues=expr_values,
-        ReturnValues="ALL_NEW"
-    )
-    return response.get("Attributes")
-
-
-def delete_playlist(playlist_id):
-    table.delete_item(Key={"id": playlist_id})
-    return {"message": "Playlist deleted successfully"}
-
-
-def add_track(playlist_id, track):
-    """
-    track = {
-        "trackId": "...",
-        "title": "...",
-        "artist": "...",
-        "albumArt": "...",
-        "genre": "..."
-    }
-    """
-    playlist = get_playlist(playlist_id)
-    if not playlist:
-        return None
-    tracks = playlist.get("tracks", [])
-    tracks.append(track)
-    updated = table.update_item(
-        Key={"id": playlist_id},
-        UpdateExpression="SET tracks = :t, updatedAt = :u",
-        ExpressionAttributeValues={
-            ":t": tracks,
-            ":u": datetime.utcnow().isoformat()
-        },
-        ReturnValues="ALL_NEW"
-    )
-    return updated.get("Attributes")
-
-
-def put_user_tokens(user_id, access_token_encrypted, refresh_token_encrypted, expires_at_iso: str):
-    """
-    Store or update user's Spotify tokens (encrypted) and expiry timestamp (ISO).
-    """
-    now = datetime.utcnow().isoformat()
-    item = {
-        "id": user_id,
-        "access_token": access_token_encrypted,
-        "refresh_token": refresh_token_encrypted,
-        "expires_at": expires_at_iso,
-        "updatedAt": now,
-        "type": "user_tokens",
-    }
-    user_table.put_item(Item=item)
-    return item
-
-
-def get_user_tokens(user_id):
+def create_playlist(user_id: str, name: str, description: str = "") -> Dict:
+    """Create a new playlist."""
+    db = SessionLocal()
     try:
-        resp = user_table.get_item(Key={"id": user_id})
-        return resp.get("Item")
+        now = datetime.utcnow()
+        playlist = Playlist(
+            id=str(uuid.uuid4()),
+            userId=user_id,
+            name=name,
+            description=description,
+            tracks=[],
+            createdAt=now,
+            updatedAt=now,
+        )
+        db.add(playlist)
+        db.commit()
+        db.refresh(playlist)
+        
+        return {
+            "id": playlist.id,
+            "userId": playlist.userId,
+            "name": playlist.name,
+            "description": playlist.description,
+            "tracks": playlist.tracks or [],
+            "createdAt": playlist.createdAt.isoformat(),
+            "updatedAt": playlist.updatedAt.isoformat(),
+        }
+    finally:
+        db.close()
+
+
+def get_playlists_for_user(user_id: str, genre_filter: Optional[str] = None) -> List[Dict]:
+    """Get all playlists for a user, optionally filtered by genre."""
+    db = SessionLocal()
+    try:
+        playlists = db.query(Playlist).filter(Playlist.userId == user_id).all()
+        
+        items = []
+        for p in playlists:
+            tracks = p.tracks or []
+            if genre_filter:
+                genres = set([g.strip().lower() for g in genre_filter.split(",")])
+                tracks = [t for t in tracks if t.get("genre") and t["genre"].lower() in genres]
+            
+            items.append({
+                "id": p.id,
+                "userId": p.userId,
+                "name": p.name,
+                "description": p.description,
+                "tracks": tracks,
+                "createdAt": p.createdAt.isoformat(),
+                "updatedAt": p.updatedAt.isoformat(),
+            })
+        
+        return items
+    finally:
+        db.close()
+
+
+def get_playlist(playlist_id: str) -> Optional[Dict]:
+    """Get a single playlist by ID."""
+    db = SessionLocal()
+    try:
+        playlist = db.query(Playlist).filter(Playlist.id == playlist_id).first()
+        if not playlist:
+            return None
+        
+        return {
+            "id": playlist.id,
+            "userId": playlist.userId,
+            "name": playlist.name,
+            "description": playlist.description,
+            "tracks": playlist.tracks or [],
+            "createdAt": playlist.createdAt.isoformat(),
+            "updatedAt": playlist.updatedAt.isoformat(),
+        }
+    finally:
+        db.close()
+
+
+def update_playlist(playlist_id: str, name: Optional[str] = None, description: Optional[str] = None) -> Optional[Dict]:
+    """Update a playlist's name and/or description."""
+    db = SessionLocal()
+    try:
+        playlist = db.query(Playlist).filter(Playlist.id == playlist_id).first()
+        if not playlist:
+            return None
+        
+        if name:
+            playlist.name = name
+        if description is not None:
+            playlist.description = description
+        
+        playlist.updatedAt = datetime.utcnow()
+        db.commit()
+        db.refresh(playlist)
+        
+        return {
+            "id": playlist.id,
+            "userId": playlist.userId,
+            "name": playlist.name,
+            "description": playlist.description,
+            "tracks": playlist.tracks or [],
+            "createdAt": playlist.createdAt.isoformat(),
+            "updatedAt": playlist.updatedAt.isoformat(),
+        }
+    finally:
+        db.close()
+
+
+def delete_playlist(playlist_id: str) -> Dict:
+    """Delete a playlist."""
+    db = SessionLocal()
+    try:
+        playlist = db.query(Playlist).filter(Playlist.id == playlist_id).first()
+        if playlist:
+            db.delete(playlist)
+            db.commit()
+        return {"message": "Playlist deleted successfully"}
+    finally:
+        db.close()
+
+
+def add_track(playlist_id: str, track: Dict) -> Optional[Dict]:
+    """Add a track to a playlist."""
+    db = SessionLocal()
+    try:
+        playlist = db.query(Playlist).filter(Playlist.id == playlist_id).first()
+        if not playlist:
+            return None
+        
+        tracks = playlist.tracks or []
+        tracks.append(track)
+        playlist.tracks = tracks
+        playlist.updatedAt = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(playlist)
+        
+        return {
+            "id": playlist.id,
+            "userId": playlist.userId,
+            "name": playlist.name,
+            "description": playlist.description,
+            "tracks": playlist.tracks or [],
+            "createdAt": playlist.createdAt.isoformat(),
+            "updatedAt": playlist.updatedAt.isoformat(),
+        }
+    finally:
+        db.close()
+
+
+def remove_track(playlist_id: str, track_id: str) -> Optional[Dict]:
+    """Remove a track from a playlist."""
+    db = SessionLocal()
+    try:
+        playlist = db.query(Playlist).filter(Playlist.id == playlist_id).first()
+        if not playlist:
+            return None
+        
+        tracks = playlist.tracks or []
+        tracks = [t for t in tracks if t.get("trackId") != track_id]
+        playlist.tracks = tracks
+        playlist.updatedAt = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(playlist)
+        
+        return {
+            "id": playlist.id,
+            "userId": playlist.userId,
+            "name": playlist.name,
+            "description": playlist.description,
+            "tracks": playlist.tracks or [],
+            "createdAt": playlist.createdAt.isoformat(),
+            "updatedAt": playlist.updatedAt.isoformat(),
+        }
+    finally:
+        db.close()
+
+
+def put_user_tokens(user_id: str, access_token_encrypted: str, refresh_token_encrypted: str, expires_at_iso: str) -> Dict:
+    """Store or update user's Spotify tokens (encrypted) and expiry timestamp (ISO)."""
+    db = SessionLocal()
+    try:
+        token = db.query(UserToken).filter(UserToken.id == user_id).first()
+        now = datetime.utcnow()
+        
+        if token:
+            token.access_token = access_token_encrypted
+            token.refresh_token = refresh_token_encrypted
+            token.expires_at = expires_at_iso
+            token.updatedAt = now
+        else:
+            token = UserToken(
+                id=user_id,
+                user_id=user_id,
+                access_token=access_token_encrypted,
+                refresh_token=refresh_token_encrypted,
+                expires_at=expires_at_iso,
+                type="user_tokens",
+                createdAt=now,
+                updatedAt=now,
+            )
+            db.add(token)
+        
+        db.commit()
+        db.refresh(token)
+        
+        return {
+            "id": token.id,
+            "access_token": token.access_token,
+            "refresh_token": token.refresh_token,
+            "expires_at": token.expires_at,
+            "updatedAt": token.updatedAt.isoformat(),
+        }
+    finally:
+        db.close()
+
+
+def get_user_tokens(user_id: str) -> Optional[Dict]:
+    """Get user's stored tokens."""
+    db = SessionLocal()
+    try:
+        token = db.query(UserToken).filter(UserToken.id == user_id).first()
+        if not token:
+            return None
+        
+        return {
+            "id": token.id,
+            "access_token": token.access_token,
+            "refresh_token": token.refresh_token,
+            "expires_at": token.expires_at,
+        }
     except Exception:
-        # If DynamoDB is not configured or credentials are missing, return None
         return None
+    finally:
+        db.close()
 
 
-def put_session_tokens(session_id, user_id, access_token_encrypted, refresh_token_encrypted, expires_at_iso: str):
-    """
-    Store or update session-scoped Spotify tokens (encrypted) tied to a session_id.
-    """
-    now = datetime.utcnow().isoformat()
-    item = {
-        "id": session_id,
-        "user_id": user_id,
-        "access_token": access_token_encrypted,
-        "refresh_token": refresh_token_encrypted,
-        "expires_at": expires_at_iso,
-        "createdAt": now,
-        "updatedAt": now,
-        "type": "session_tokens",
-    }
+def put_session_tokens(session_id: str, user_id: str, access_token_encrypted: str, refresh_token_encrypted: str, expires_at_iso: str) -> Optional[Dict]:
+    """Store or update session-scoped Spotify tokens (encrypted) tied to a session_id."""
+    db = SessionLocal()
     try:
-        user_table.put_item(Item=item)
-        return item
+        token = db.query(UserToken).filter(UserToken.id == session_id).first()
+        now = datetime.utcnow()
+        
+        if token:
+            token.user_id = user_id
+            token.access_token = access_token_encrypted
+            token.refresh_token = refresh_token_encrypted
+            token.expires_at = expires_at_iso
+            token.updatedAt = now
+        else:
+            token = UserToken(
+                id=session_id,
+                user_id=user_id,
+                access_token=access_token_encrypted,
+                refresh_token=refresh_token_encrypted,
+                expires_at=expires_at_iso,
+                type="session_tokens",
+                createdAt=now,
+                updatedAt=now,
+            )
+            db.add(token)
+        
+        db.commit()
+        db.refresh(token)
+        
+        return {
+            "id": token.id,
+            "user_id": token.user_id,
+            "access_token": token.access_token,
+            "refresh_token": token.refresh_token,
+            "expires_at": token.expires_at,
+            "createdAt": token.createdAt.isoformat(),
+            "updatedAt": token.updatedAt.isoformat(),
+        }
     except Exception:
         return None
+    finally:
+        db.close()
 
 
-def get_session_tokens(session_id):
-    """
-    Retrieve the session-scoped token record by session_id. Returns None on errors or missing item.
-    """
+def get_session_tokens(session_id: str) -> Optional[Dict]:
+    """Retrieve the session-scoped token record by session_id."""
+    db = SessionLocal()
     try:
-        resp = user_table.get_item(Key={"id": session_id})
-        return resp.get("Item")
+        token = db.query(UserToken).filter(UserToken.id == session_id).first()
+        if not token:
+            return None
+        
+        return {
+            "id": token.id,
+            "user_id": token.user_id,
+            "access_token": token.access_token,
+            "refresh_token": token.refresh_token,
+            "expires_at": token.expires_at,
+        }
     except Exception:
         return None
+    finally:
+        db.close()
 
 
-def delete_session_tokens(session_id):
-    """
-    Delete a session token record (best-effort).
-    """
+def delete_session_tokens(session_id: str) -> bool:
+    """Delete a session token record (best-effort)."""
+    db = SessionLocal()
     try:
-        user_table.delete_item(Key={"id": session_id})
+        token = db.query(UserToken).filter(UserToken.id == session_id).first()
+        if token:
+            db.delete(token)
+            db.commit()
         return True
     except Exception:
         return False
-
-
-def remove_track(playlist_id, track_id):
-    playlist = get_playlist(playlist_id)
-    if not playlist:
-        return None
-    tracks = playlist.get("tracks", [])
-    tracks = [t for t in tracks if t.get("trackId") != track_id]
-    updated = table.update_item(
-        Key={"id": playlist_id},
-        UpdateExpression="SET tracks = :t, updatedAt = :u",
-        ExpressionAttributeValues={
-            ":t": tracks,
-            ":u": datetime.utcnow().isoformat()
-        },
-        ReturnValues="ALL_NEW"
-    )
-    return updated.get("Attributes")
+    finally:
+        db.close()

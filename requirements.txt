@@ -1,6 +1,5 @@
 fastapi
 uvicorn
-boto3
 pydantic[email]
 pytest-asyncio[httpx]
 redis[aioredis]
@@ -10,3 +9,6 @@ cryptography
 python-multipart
 slowapi
 python-json-logger
+sqlalchemy
+psycopg2-binary
+python-dotenv
