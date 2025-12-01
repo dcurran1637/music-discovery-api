@@ -1,77 +1,105 @@
 # Music Discovery API
 
-A FastAPI-based backend for discovering Spotify tracks and artists, managing playlists, and generating personalized recommendations. Supports caching via Redis, JWT authentication, and Spotify API integration.
+A FastAPI backend for Spotify music discovery, playlist management, and personalized recommendations.
 
 ## Features
 
-- **Spotify Integration**: Fetch artist and track metadata, user top artists/tracks, and recommendations.
-- **Playlist Management**: Create, update, delete playlists and manage tracks.
-- **User Authentication**: JWT-based authentication with optional API key fallback for legacy/demo usage.
-- **Caching**: Redis-based caching for tracks, artists, and recommendations to improve performance.
-- **Recommendation Engine**: Generates personalized recommendations based on user top genres, artists, and tracks.
+- Spotify integration for tracks, artists, and recommendations
+- Playlist CRUD operations
+- JWT authentication with Spotify OAuth
+- PostgreSQL database with pgAdmin interface
+- Optional Redis caching
 
 ---
 
-## Requirements
+## Quick Start
 
-- Python 3.11+
-- Redis (default at `redis://localhost:6379`)
-- Spotify Developer account credentials (Client ID & Client Secret)
-- Optional: `.env` file for environment variables
-
----
-
-## Setup
-
-### 1. Clone the repository
-
+### 1. Install dependencies
 ```bash
-git clone https://github.com/yourusername/music-discovery-api.git
-cd music-discovery-api
-
-### 2. Create a virtual environment
-python -m venv venv
-source venv/bin/activate   # Linux / macOS
-venv\Scripts\activate      # Windows
-
-### 3. instal dependencies
 pip install -r requirements.txt
+```
 
-### 4. run redis
-redis-server
+### 2. Configure environment variables
 
-### 5. start the api server
-python -m uvicorn app.main:app --reload
+Create `.env` file:
+```bash
+export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/music_discovery"
+export SPOTIFY_CLIENT_ID="your_spotify_client_id"
+export SPOTIFY_CLIENT_SECRET="your_spotify_client_secret"
+export SPOTIFY_REDIRECT_URI="http://127.0.0.1:8000/api/auth/callback"
+export JWT_SECRET="your_jwt_secret"
+```
 
-###API Endpoints Overview
-/api/discover/recommendations
+Then load it:
+```bash
+source .env
+```
 
-Returns Spotify track recommendations for the authenticated user.
+### 3. Start services with Docker
 
-Optional query params: genres, min_popularity, released_after.
+**PostgreSQL:**
+```bash
+docker run -d --name postgres-local \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=music_discovery \
+  -p 5432:5432 \
+  postgres:15-alpine
+```
 
-Requires Authorization: Bearer <JWT>.
+**pgAdmin (Database UI):**
+```bash
+docker run -d --name pgadmin \
+  -e PGADMIN_DEFAULT_EMAIL=admin@admin.com \
+  -e PGADMIN_DEFAULT_PASSWORD=admin \
+  -p 5050:80 \
+  dpage/pgadmin4
+```
 
-/api/artists/{artist_id}
+**Redis (optional):**
+```bash
+docker run -d --name redis-local -p 6379:6379 redis:alpine
+```
 
-Returns artist metadata, including genres and images.
+### 4. Initialize database
+```bash
+python scripts/init_postgres.py
+```
 
-Requires JWT authentication.
+### 5. Start API server
+```bash
+python -m uvicorn app.main:app --reload --host 0.0.0.0
+```
 
-/api/artists/by-genres/
+---
 
-Returns artists matching specified genres.
+## Access Points
 
-Requires JWT authentication.
+- **API**: http://127.0.0.1:8000
+- **API Docs**: http://127.0.0.1:8000/docs
+- **pgAdmin**: http://localhost:5050 (login: admin@admin.com / admin)
 
-/api/tracks/{track_id}
+### Database Connection (for pgAdmin)
+- **Host**: postgres-local (or localhost if not using Docker network)
+- **Port**: 5432
+- **Database**: music_discovery
+- **Username**: postgres
+- **Password**: postgres
 
-Returns track metadata and first artist's genres.
+---
 
-Optional Spotify token can be provided.
+## Key Endpoints
 
-/api/playlists
+- `GET /api/discover/recommendations` - Get personalized track recommendations
+- `GET /api/artists/{artist_id}` - Get artist details
+- `GET /api/tracks/{track_id}` - Get track details
+- `GET /api/playlists` - List user playlists
+- `POST /api/playlists` - Create new playlist
+- `GET /api/auth/login` - Start OAuth login flow
 
-CRUD operations for user playlists.
+All endpoints require JWT authentication via `Authorization: Bearer <token>` header.
 
-Supports JWT or demo API key fallback.
+---
+
+## Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for production deployment instructions.
