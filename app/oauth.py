@@ -87,6 +87,8 @@ async def generate_auth_url(user_id: str) -> tuple[str, str]:
             "user-read-email",
             "user-library-read",
             "user-top-read",
+            "playlist-read-private",
+            "playlist-read-collaborative",
             "playlist-modify-public",
             "playlist-modify-private",
             "user-read-playback-state",
