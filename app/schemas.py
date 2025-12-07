@@ -52,6 +52,51 @@ class PlaylistCreate(BaseModel):
             "example": {"name": "Chill Vibes", "description": "Laid-back tracks for working"}
         }
 
+
+class SpotifyPlaylistCreate(BaseModel):
+    """Schema for creating a Spotify playlist.
+    
+    Fields:
+    - name: display name for the playlist (required)
+    - description: optional text describing the playlist
+    - public: whether the playlist is public (default: True)
+    - collaborative: whether others can add tracks (default: False)
+    """
+    name: str
+    description: Optional[str] = None
+    public: bool = True
+    collaborative: bool = False
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "name": "My Awesome Playlist",
+                "description": "A collection of my favorite tracks",
+                "public": True,
+                "collaborative": False
+            }
+        }
+
+
+class SpotifyPlaylistUpdate(BaseModel):
+    """Schema for updating a Spotify playlist.
+    
+    All fields are optional - only provided fields will be updated.
+    """
+    name: Optional[str] = None
+    description: Optional[str] = None
+    public: Optional[bool] = None
+    collaborative: Optional[bool] = None
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "name": "Updated Playlist Name",
+                "description": "New description"
+            }
+        }
+
+
 class RecommendedTrack(BaseModel):
     trackId: str
     title: str

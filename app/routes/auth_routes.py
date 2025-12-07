@@ -2,7 +2,7 @@
 OAuth 2.0 authentication routes for Spotify.
 """
 
-from fastapi import APIRouter, Query, HTTPException, status, Depends, Header
+from fastapi import APIRouter, Query, HTTPException, status, Depends, Header, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from typing import Optional
 import uuid
@@ -18,12 +18,41 @@ from ..oauth import (
     refresh_spotify_token,
 )
 from .. import db
+from ..spotify_client import get_user_playlists
 from ..crypto import encrypt, decrypt
 from ..logging_config import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
+
+
+async def sync_playlists_background(user_id: str, spotify_token: str):
+    """Background task to sync user's playlists after authentication."""
+    try:
+        logger.info(f"Starting background playlist sync for user {user_id}")
+        
+        # Fetch all playlists from Spotify (paginated)
+        all_playlists = []
+        limit = 50
+        offset = 0
+        
+        while True:
+            response = await get_user_playlists(spotify_token, limit=limit, offset=offset)
+            items = response.get("items", [])
+            all_playlists.extend(items)
+            
+            # Check if there are more playlists
+            total = response.get("total", 0)
+            if offset + limit >= total:
+                break
+            offset += limit
+        
+        # Sync to database
+        stats = db.sync_spotify_playlists(user_id, all_playlists)
+        logger.info(f"Background playlist sync completed for user {user_id}: {stats}")
+    except Exception as e:
+        logger.error(f"Background playlist sync failed for user {user_id}: {e}")
 
 
 @router.get("/login")
@@ -52,6 +81,7 @@ async def login(
 
 @router.get("/callback")
 async def callback(
+    background_tasks: BackgroundTasks,
     code: Optional[str] = Query(None),
     state: Optional[str] = Query(None),
     error: Optional[str] = Query(None)
@@ -98,7 +128,10 @@ async def callback(
         # Return Spotify access token directly
         spotify_access_token = token_response.get("spotify_access_token")
 
-        logger.info(f"Successful OAuth login for user {user_id}")
+        # Trigger background playlist sync
+        background_tasks.add_task(sync_playlists_background, user_id, spotify_access_token)
+        
+        logger.info(f"Successful OAuth login for user {user_id}, playlist sync queued")
 
         return {
             "access_token": spotify_access_token,

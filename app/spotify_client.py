@@ -133,6 +133,136 @@ async def spotify_search_artists(query: str, spotify_token: str) -> List[Dict[st
             return []
 
 
+async def get_user_playlists(spotify_token: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+    """Fetch the current user's Spotify playlists."""
+    if not spotify_token:
+        return {"items": [], "total": 0}
+    
+    url = f"{SPOTIFY_API_BASE}/me/playlists"
+    params = {"limit": limit, "offset": offset}
+    headers = {"Authorization": f"Bearer {spotify_token}"}
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.get(url, headers=headers, params=params, timeout=10)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            logger.error(f"Error fetching user playlists: {e}")
+            return {"items": [], "total": 0}
+
+
+async def create_spotify_playlist(
+    spotify_token: str, 
+    user_id: str,
+    name: str, 
+    description: Optional[str] = None,
+    public: bool = True,
+    collaborative: bool = False
+) -> Optional[Dict[str, Any]]:
+    """Create a new Spotify playlist for the user."""
+    if not spotify_token or not user_id:
+        return None
+    
+    url = f"{SPOTIFY_API_BASE}/users/{user_id}/playlists"
+    headers = {
+        "Authorization": f"Bearer {spotify_token}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "name": name,
+        "public": public,
+        "collaborative": collaborative
+    }
+    if description:
+        payload["description"] = description
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.post(url, headers=headers, json=payload, timeout=10)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            logger.error(f"Error creating Spotify playlist: {e}")
+            return None
+
+
+async def update_spotify_playlist(
+    spotify_token: str,
+    playlist_id: str,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    public: Optional[bool] = None,
+    collaborative: Optional[bool] = None
+) -> bool:
+    """Update a Spotify playlist's details."""
+    if not spotify_token or not playlist_id:
+        return False
+    
+    url = f"{SPOTIFY_API_BASE}/playlists/{playlist_id}"
+    headers = {
+        "Authorization": f"Bearer {spotify_token}",
+        "Content-Type": "application/json"
+    }
+    payload = {}
+    if name is not None:
+        payload["name"] = name
+    if description is not None:
+        payload["description"] = description
+    if public is not None:
+        payload["public"] = public
+    if collaborative is not None:
+        payload["collaborative"] = collaborative
+    
+    if not payload:
+        return True  # Nothing to update
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.put(url, headers=headers, json=payload, timeout=10)
+            r.raise_for_status()
+            return True
+        except Exception as e:
+            logger.error(f"Error updating Spotify playlist: {e}")
+            return False
+
+
+async def delete_spotify_playlist(spotify_token: str, playlist_id: str) -> bool:
+    """Unfollow (delete) a Spotify playlist. Note: Can only unfollow playlists owned by the user."""
+    if not spotify_token or not playlist_id:
+        return False
+    
+    url = f"{SPOTIFY_API_BASE}/playlists/{playlist_id}/followers"
+    headers = {"Authorization": f"Bearer {spotify_token}"}
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.delete(url, headers=headers, timeout=10)
+            r.raise_for_status()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting Spotify playlist: {e}")
+            return False
+
+
+async def get_spotify_playlist(spotify_token: str, playlist_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch a single Spotify playlist by ID."""
+    if not spotify_token or not playlist_id:
+        return None
+    
+    url = f"{SPOTIFY_API_BASE}/playlists/{playlist_id}"
+    headers = {"Authorization": f"Bearer {spotify_token}"}
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.get(url, headers=headers, timeout=10)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            logger.error(f"Error fetching Spotify playlist: {e}")
+            return None
+
+
 async def get_spotify_recommendations(
     spotify_token: str,
     limit: int = 10,

@@ -39,6 +39,34 @@ class Playlist(Base):
     )
 
 
+class SpotifyPlaylist(Base):
+    """Synced Spotify playlists."""
+    __tablename__ = "spotify_playlists"
+    
+    id = Column(String, primary_key=True)  # Spotify playlist ID
+    userId = Column(String, nullable=False, index=True)  # Spotify user ID
+    name = Column(String, nullable=False)
+    description = Column(Text, default="")
+    public = Column(String, default="true")  # stored as string for compatibility
+    collaborative = Column(String, default="false")
+    snapshot_id = Column(String)  # Spotify's version identifier
+    owner_id = Column(String)
+    owner_display_name = Column(String)
+    track_count = Column(String, default="0")  # stored as string for compatibility
+    images = Column(JSON, default=list)
+    external_url = Column(String)
+    uri = Column(String)
+    raw_data = Column(JSON, default=dict)  # Store full Spotify response
+    synced_at = Column(DateTime, default=datetime.utcnow)
+    createdAt = Column(DateTime, default=datetime.utcnow)
+    updatedAt = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('idx_spotify_playlists_userId', 'userId'),
+        Index('idx_spotify_playlists_synced_at', 'synced_at'),
+    )
+
+
 class UserToken(Base):
     __tablename__ = "user_tokens"
     

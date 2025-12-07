@@ -2,7 +2,7 @@ import os
 import uuid
 from datetime import datetime
 from typing import Optional, List, Dict
-from .database import SessionLocal, Playlist, UserToken
+from .database import SessionLocal, Playlist, UserToken, SpotifyPlaylist
 
 
 def create_playlist(user_id: str, name: str, description: str = "") -> Dict:
@@ -319,6 +319,175 @@ def delete_session_tokens(session_id: str) -> bool:
             db.delete(token)
             db.commit()
         return True
+    except Exception:
+        return False
+    finally:
+        db.close()
+
+
+# -----------------------------
+# Spotify Playlist Sync Functions
+# -----------------------------
+
+def sync_spotify_playlists(user_id: str, playlists_data: List[Dict]) -> Dict:
+    """
+    Sync Spotify playlists to the database.
+    
+    Args:
+        user_id: Spotify user ID
+        playlists_data: List of playlist objects from Spotify API
+    
+    Returns:
+        Dictionary with sync statistics
+    """
+    db = SessionLocal()
+    try:
+        stats = {"created": 0, "updated": 0, "total": 0}
+        now = datetime.utcnow()
+        
+        for playlist_data in playlists_data:
+            playlist_id = playlist_data.get("id")
+            if not playlist_id:
+                continue
+            
+            # Check if playlist already exists
+            existing = db.query(SpotifyPlaylist).filter(
+                SpotifyPlaylist.id == playlist_id
+            ).first()
+            
+            # Extract data
+            owner = playlist_data.get("owner", {})
+            tracks_info = playlist_data.get("tracks", {})
+            
+            playlist_obj = {
+                "id": playlist_id,
+                "userId": user_id,
+                "name": playlist_data.get("name", ""),
+                "description": playlist_data.get("description") or "",
+                "public": str(playlist_data.get("public", True)).lower(),
+                "collaborative": str(playlist_data.get("collaborative", False)).lower(),
+                "snapshot_id": playlist_data.get("snapshot_id"),
+                "owner_id": owner.get("id"),
+                "owner_display_name": owner.get("display_name"),
+                "track_count": str(tracks_info.get("total", 0)),
+                "images": playlist_data.get("images", []),
+                "external_url": playlist_data.get("external_urls", {}).get("spotify"),
+                "uri": playlist_data.get("uri"),
+                "raw_data": playlist_data,
+                "synced_at": now,
+                "updatedAt": now,
+            }
+            
+            if existing:
+                # Update existing playlist
+                for key, value in playlist_obj.items():
+                    if key != "createdAt":
+                        setattr(existing, key, value)
+                stats["updated"] += 1
+            else:
+                # Create new playlist record
+                playlist_obj["createdAt"] = now
+                new_playlist = SpotifyPlaylist(**playlist_obj)
+                db.add(new_playlist)
+                stats["created"] += 1
+            
+            stats["total"] += 1
+        
+        db.commit()
+        return stats
+    finally:
+        db.close()
+
+
+def get_synced_spotify_playlists(user_id: str) -> List[Dict]:
+    """Get all synced Spotify playlists for a user."""
+    db = SessionLocal()
+    try:
+        playlists = db.query(SpotifyPlaylist).filter(
+            SpotifyPlaylist.userId == user_id
+        ).order_by(SpotifyPlaylist.synced_at.desc()).all()
+        
+        items = []
+        for p in playlists:
+            items.append({
+                "id": p.id,
+                "userId": p.userId,
+                "name": p.name,
+                "description": p.description,
+                "public": p.public == "true",
+                "collaborative": p.collaborative == "true",
+                "snapshot_id": p.snapshot_id,
+                "owner": {
+                    "id": p.owner_id,
+                    "display_name": p.owner_display_name,
+                },
+                "tracks": {
+                    "total": int(p.track_count) if p.track_count else 0
+                },
+                "images": p.images or [],
+                "external_urls": {"spotify": p.external_url} if p.external_url else {},
+                "uri": p.uri,
+                "synced_at": p.synced_at.isoformat() if p.synced_at else None,
+                "createdAt": p.createdAt.isoformat(),
+                "updatedAt": p.updatedAt.isoformat(),
+            })
+        
+        return items
+    finally:
+        db.close()
+
+
+def get_synced_spotify_playlist(playlist_id: str) -> Optional[Dict]:
+    """Get a single synced Spotify playlist by ID."""
+    db = SessionLocal()
+    try:
+        playlist = db.query(SpotifyPlaylist).filter(
+            SpotifyPlaylist.id == playlist_id
+        ).first()
+        
+        if not playlist:
+            return None
+        
+        return {
+            "id": playlist.id,
+            "userId": playlist.userId,
+            "name": playlist.name,
+            "description": playlist.description,
+            "public": playlist.public == "true",
+            "collaborative": playlist.collaborative == "true",
+            "snapshot_id": playlist.snapshot_id,
+            "owner": {
+                "id": playlist.owner_id,
+                "display_name": playlist.owner_display_name,
+            },
+            "tracks": {
+                "total": int(playlist.track_count) if playlist.track_count else 0
+            },
+            "images": playlist.images or [],
+            "external_urls": {"spotify": playlist.external_url} if playlist.external_url else {},
+            "uri": playlist.uri,
+            "raw_data": playlist.raw_data,
+            "synced_at": playlist.synced_at.isoformat() if playlist.synced_at else None,
+            "createdAt": playlist.createdAt.isoformat(),
+            "updatedAt": playlist.updatedAt.isoformat(),
+        }
+    finally:
+        db.close()
+
+
+def delete_synced_spotify_playlist(playlist_id: str) -> bool:
+    """Delete a synced Spotify playlist from the database."""
+    db = SessionLocal()
+    try:
+        playlist = db.query(SpotifyPlaylist).filter(
+            SpotifyPlaylist.id == playlist_id
+        ).first()
+        
+        if playlist:
+            db.delete(playlist)
+            db.commit()
+            return True
+        return False
     except Exception:
         return False
     finally:
