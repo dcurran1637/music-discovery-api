@@ -54,8 +54,11 @@ spec:
             secretKeyRef:
               name: app-secrets
               key: crypto-key
-        - name: DYNAMODB_REGION
-          value: "us-east-1"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: database-secrets
+              key: database-url
         - name: REDIS_URL
           value: "redis://redis:6379"
         
