@@ -114,28 +114,27 @@ python scripts/init_postgres.py
 ### Tables Created
 
 #### `playlists`
-| Column | Type | Description |
-|--------|------|-------------|
-| id | String (UUID) | Primary key |
-| userId | String | Spotify user ID (indexed) |
-| name | String | Playlist name |
-| description | Text | Playlist description |
-| tracks | JSON | Array of track objects |
-| createdAt | DateTime | Creation timestamp |
-| updatedAt | DateTime | Last update timestamp |
 
-**Indexes:**
-- `idx_playlists_userId` on `userId` column
+Stores user playlists with the following fields:
+- `id` (String/UUID) - Primary key
+- `userId` (String) - Spotify user ID (indexed)
+- `name` (String) - Playlist name
+- `description` (Text) - Playlist description
+- `tracks` (JSON) - Array of track objects
+- `createdAt` (DateTime) - Creation timestamp
+- `updatedAt` (DateTime) - Last update timestamp
+
+**Index:** `idx_playlists_userId` on `userId` column for fast user-based queries
 
 #### `user_tokens`
-| Column | Type | Description |
-|--------|------|-------------|
-| id | String | Primary key (user_id or session_id) |
-| user_id | String | Spotify user ID (indexed) |
-| access_token | Text | Encrypted OAuth access token |
-| refresh_token | Text | Encrypted OAuth refresh token |
-| expires_at | String | Token expiration time |
-| type | String | Token type: "user_tokens" or "session_tokens" |
+
+Stores encrypted OAuth tokens with the following fields:
+- `id` (String) - Primary key (user_id or session_id)
+- `user_id` (String) - Spotify user ID (indexed)
+- `access_token` (Text) - Encrypted OAuth access token
+- `refresh_token` (Text) - Encrypted OAuth refresh token
+- `expires_at` (String) - Token expiration time
+- `type` (String) - Token type: "user_tokens" or "session_tokens"
 
 ---
 
@@ -293,9 +292,9 @@ psql $DATABASE_URL < backup.sql
 
 ## Summary
 
-✅ **PostgreSQL** is the recommended database for Render
-✅ Fully compatible with Render's managed PostgreSQL service
-✅ Easy to set up locally with Docker
-✅ Automatic URL format handling for Render
-✅ Database tables initialized via `scripts/init_postgres.py`
-✅ No DynamoDB required!
+ **PostgreSQL** is the recommended database for Render
+ Fully compatible with Render's managed PostgreSQL service
+ Easy to set up locally with Docker
+ Automatic URL format handling for Render
+ Database tables initialized via `scripts/init_postgres.py`
+ No DynamoDB required!
