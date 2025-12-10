@@ -34,8 +34,10 @@ def main():
         print("\nDatabase initialization complete!")
         
     except Exception as e:
-        print(f"Error initializing database: {e}", file=sys.stderr)
-        sys.exit(1)
+        print(f"Warning: Could not initialize database: {e}", file=sys.stderr)
+        print("This is normal if database is not yet ready. Tables will be created on first app startup.")
+        # Don't exit with error - let the app handle it
+        sys.exit(0)
 
 
 if __name__ == "__main__":

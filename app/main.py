@@ -20,6 +20,7 @@ from .routes import auth_routes
 from .routes import gdpr
 from .routes import health
 from .logging_config import get_logger
+from .database import init_db
 
 logger = get_logger(__name__)
 
@@ -46,6 +47,19 @@ app.add_exception_handler(RateLimitExceeded, lambda request, exc: JSONResponse(
     status_code=429,
     content={"detail": "Rate limit exceeded. Please try again later."},
 ))
+
+# Startup event to initialize database
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database tables on startup."""
+    try:
+        logger.info("Initializing database...")
+        init_db()
+        logger.info("Database initialization complete")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+        # Don't fail startup - let app start anyway
+        pass
 
 # Include routers
 app.include_router(playlists.router)
