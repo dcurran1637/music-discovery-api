@@ -5,11 +5,11 @@ A REST API that connects to your Spotify account to help you discover music, man
 ## What Does It Do?
 
 This API lets you:
-- 🎵 **Discover Music** - Get personalized track recommendations based on your taste
-- 📝 **Manage Playlists** - Create, edit, and delete Spotify playlists through the API
-- 💾 **Cache Data** - Store playlist information locally for faster access
-- 🔍 **Search & Explore** - Browse artists, tracks, and albums
-- 🔐 **Secure Access** - Uses Spotify OAuth for safe authentication
+-  **Discover Music** - Get personalized track recommendations based on your taste
+-  **Manage Playlists** - Create, edit, and delete Spotify playlists through the API
+-  **Cache Data** - Store playlist information locally for faster access
+-  **Search & Explore** - Browse artists, tracks, and albums
+-  **Secure Access** - Uses Spotify OAuth for safe authentication
 
 ---
 
@@ -299,6 +299,33 @@ Access pgAdmin at `http://localhost:5050` (login: admin@admin.com / admin)
 
 ---
 
+##  Deployment & CI/CD
+
+This project includes complete production deployment setup:
+
+### Quick Deploy to Render
+1. **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Step-by-step checklist for deployment
+2. **[DEPLOYMENT.md](DEPLOYMENT.md)** - Comprehensive deployment guide
+3. **[DEPLOYMENT_SUMMARY.md](DEPLOYMENT_SUMMARY.md)** - Technical summary and architecture
+
+### Features
+ **Automated CI/CD** with GitHub Actions  
+ **Infrastructure as Code** with `render.yaml`  
+ **Security Scanning** (Safety, Bandit)  
+ **Automated Testing** with coverage reports  
+ **Health Monitoring** and logging  
+ **Secrets Management** (GitHub + Render)  
+ **Production Verification** scripts  
+
+### What You Need Outside Codespace
+- Spotify Developer account (5 min setup)
+- Render account (free tier available)
+- GitHub repository access
+
+**Start here**: [QUICK_REFERENCE.md](QUICK_REFERENCE.md)
+
+---
+
 ## Tech Stack
 
 - **FastAPI** - Modern Python web framework
@@ -307,3 +334,5 @@ Access pgAdmin at `http://localhost:5050` (login: admin@admin.com / admin)
 - **Redis** - Optional caching layer
 - **Spotify Web API** - Music data source
 - **JWT** - Secure authentication tokens
+- **GitHub Actions** - CI/CD automation
+- **Render** - Cloud platform (PaaS)
