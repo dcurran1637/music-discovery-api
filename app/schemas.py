@@ -1,6 +1,8 @@
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from datetime import datetime
+import httpx
+from app.spotify_client import get_spotify_token
 
 
 class UserPreferences(BaseModel):
