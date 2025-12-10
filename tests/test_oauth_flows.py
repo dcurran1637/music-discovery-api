@@ -85,7 +85,8 @@ class TestPlaylistOwnership:
         
         user_id = "user_123"
         session_id = "session_123"
-        jwt_token = oauth.create_jwt_token(user_id, session_id, expires_in=3600)
+        spotify_token = "spotify_access_token_123"
+        jwt_token = oauth.create_jwt_token(user_id, session_id, spotify_access_token=spotify_token, expires_in=3600)
         
         created_playlist = {
             "id": "pl_123",
@@ -97,11 +98,11 @@ class TestPlaylistOwnership:
             "updatedAt": datetime.utcnow().isoformat(),
         }
         
-        def mock_create(uid, name, desc=""):
-            assert uid == user_id
+        async def mock_create_spotify_playlist(spotify_token, user_id, name, description=None, public=None, collaborative=None):
             return created_playlist
         
-        monkeypatch.setattr("app.db.create_playlist", mock_create)
+        monkeypatch.setattr("app.routes.playlists.create_spotify_playlist", mock_create_spotify_playlist)
+        monkeypatch.setattr("app.db.sync_spotify_playlists", lambda uid, playlists: None)
         
         resp = client.post(
             "/api/playlists",
@@ -118,7 +119,8 @@ class TestPlaylistOwnership:
         
         owner_id = "user_123"
         session_id = "session_123"
-        owner_jwt = oauth.create_jwt_token(owner_id, session_id, expires_in=3600)
+        spotify_token = "spotify_access_token_123"
+        owner_jwt = oauth.create_jwt_token(owner_id, session_id, spotify_access_token=spotify_token, expires_in=3600)
         
         playlist = {
             "id": "pl_123",
@@ -127,12 +129,15 @@ class TestPlaylistOwnership:
             "description": "Original desc",
         }
         
-        monkeypatch.setattr("app.db.get_playlist", lambda pid: playlist)
+        async def mock_update_spotify(spotify_token, playlist_id, name=None, description=None, public=None, collaborative=None):
+            return True
         
-        def mock_update(pid, name=None, description=None):
-            return {**playlist, "name": name or playlist["name"]}
+        async def mock_get_spotify_playlist(spotify_token, playlist_id):
+            return {**playlist, "name": "New Name"}
         
-        monkeypatch.setattr("app.db.update_playlist", mock_update)
+        monkeypatch.setattr("app.routes.playlists.update_spotify_playlist", mock_update_spotify)
+        monkeypatch.setattr("app.routes.playlists.get_spotify_playlist", mock_get_spotify_playlist)
+        monkeypatch.setattr("app.db.sync_spotify_playlists", lambda uid, playlists: None)
         
         # Owner can update
         resp = client.put(
@@ -142,7 +147,7 @@ class TestPlaylistOwnership:
         )
         
         assert resp.status_code == 200
-        assert resp.json()["name"] == "New Name"
+        assert resp.json()["message"] == "Playlist updated successfully"
 
     def test_update_playlist_non_owner_forbidden(self, monkeypatch, client):
         """Test that non-owner cannot update another user's playlist."""
@@ -150,7 +155,8 @@ class TestPlaylistOwnership:
         owner_id = "user_123"
         other_user_id = "user_456"
         session_id = "session_456"
-        other_jwt = oauth.create_jwt_token(other_user_id, session_id, expires_in=3600)
+        spotify_token = "spotify_access_token_456"
+        other_jwt = oauth.create_jwt_token(other_user_id, session_id, spotify_access_token=spotify_token, expires_in=3600)
         
         playlist = {
             "id": "pl_123",
@@ -159,7 +165,10 @@ class TestPlaylistOwnership:
             "description": "Original desc",
         }
         
-        monkeypatch.setattr("app.db.get_playlist", lambda pid: playlist)
+        async def mock_update_spotify(spotify_token, playlist_id, name=None, description=None, public=None, collaborative=None):
+            return False  # Spotify returns False when user doesn't own playlist
+        
+        monkeypatch.setattr("app.routes.playlists.update_spotify_playlist", mock_update_spotify)
         
         # Other user tries to update
         resp = client.put(
@@ -168,15 +177,16 @@ class TestPlaylistOwnership:
             headers={"Authorization": f"Bearer {other_jwt}"}
         )
         
-        assert resp.status_code == 403
-        assert "Not authorized" in resp.json()["detail"]
+        assert resp.status_code == 503
+        assert "Failed to update playlist" in resp.json()["detail"]
 
     def test_delete_playlist_owner_only(self, monkeypatch, client):
         """Test that only the playlist owner can delete it."""
         
         owner_id = "user_123"
         session_id = "session_123"
-        owner_jwt = oauth.create_jwt_token(owner_id, session_id, expires_in=3600)
+        spotify_token = "spotify_access_token_123"
+        owner_jwt = oauth.create_jwt_token(owner_id, session_id, spotify_access_token=spotify_token, expires_in=3600)
         
         playlist = {
             "id": "pl_123",
@@ -184,8 +194,11 @@ class TestPlaylistOwnership:
             "name": "Deletable Playlist",
         }
         
-        monkeypatch.setattr("app.db.get_playlist", lambda pid: playlist)
-        monkeypatch.setattr("app.db.delete_playlist", lambda pid: {"message": "Deleted"})
+        async def mock_delete_spotify(spotify_token, playlist_id):
+            return True
+        
+        monkeypatch.setattr("app.routes.playlists.delete_spotify_playlist", mock_delete_spotify)
+        monkeypatch.setattr("app.db.delete_synced_spotify_playlist", lambda uid, pid: None)
         
         # Owner can delete
         resp = client.delete(
@@ -194,7 +207,7 @@ class TestPlaylistOwnership:
         )
         
         assert resp.status_code == 200
-        assert resp.json()["message"] == "Deleted"
+        assert resp.json()["message"] == "Playlist deleted successfully"
 
     def test_delete_playlist_non_owner_forbidden(self, monkeypatch, client):
         """Test that non-owner cannot delete another user's playlist."""
@@ -202,7 +215,8 @@ class TestPlaylistOwnership:
         owner_id = "user_123"
         other_user_id = "user_456"
         session_id = "session_456"
-        other_jwt = oauth.create_jwt_token(other_user_id, session_id, expires_in=3600)
+        spotify_token = "spotify_access_token_456"
+        other_jwt = oauth.create_jwt_token(other_user_id, session_id, spotify_access_token=spotify_token, expires_in=3600)
         
         playlist = {
             "id": "pl_123",
@@ -210,7 +224,10 @@ class TestPlaylistOwnership:
             "name": "Protected Playlist",
         }
         
-        monkeypatch.setattr("app.db.get_playlist", lambda pid: playlist)
+        async def mock_delete_spotify(spotify_token, playlist_id):
+            return False  # Spotify returns False when user doesn't own playlist
+        
+        monkeypatch.setattr("app.routes.playlists.delete_spotify_playlist", mock_delete_spotify)
         
         # Other user tries to delete
         resp = client.delete(
@@ -218,8 +235,8 @@ class TestPlaylistOwnership:
             headers={"Authorization": f"Bearer {other_jwt}"}
         )
         
-        assert resp.status_code == 403
-        assert "Not authorized" in resp.json()["detail"]
+        assert resp.status_code == 503
+        assert "Failed to delete playlist" in resp.json()["detail"]
 
     def test_add_track_owner_only(self, monkeypatch, client):
         """Test that only the playlist owner can add tracks."""

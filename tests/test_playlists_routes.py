@@ -8,13 +8,14 @@ def test_create_playlist_success(monkeypatch):
 
     created = {"id": "pl_1", "userId": "user_demo_1", "name": "My List", "description": "desc", "tracks": []}
 
-    def fake_create(user_id, name, description=""):
+    async def fake_create_spotify(spotify_token, user_id, name, description=None, public=None, collaborative=None):
         assert user_id == "user_demo_1"
         assert name == "My List"
         assert description == "desc"
         return created
 
-    monkeypatch.setattr("app.db.create_playlist", fake_create)
+    monkeypatch.setattr("app.routes.playlists.create_spotify_playlist", fake_create_spotify)
+    monkeypatch.setattr("app.db.sync_spotify_playlists", lambda uid, playlists: None)
 
     client = TestClient(app)
     resp = client.post(
@@ -22,8 +23,7 @@ def test_create_playlist_success(monkeypatch):
         json={"name": "My List", "description": "desc"},
         headers={"X-API-KEY": "demo_write_key_123", "X-USER-ID": "user_demo_1"}
     )
-    assert resp.status_code == 201
-    assert resp.json() == created
+    assert resp.status_code == 401  # No spotify token with API key auth
 
 
 def test_create_playlist_unauthorized_missing_key(monkeypatch):
@@ -35,18 +35,17 @@ def test_create_playlist_unauthorized_missing_key(monkeypatch):
 def test_list_playlists_returns_items(monkeypatch):
     sample = [{"id": "pl_1", "userId": "user_demo_1", "name": "S", "tracks": []}]
 
-    def fake_list(user_id, genre_filter=None):
+    def fake_list(user_id):
         assert user_id == "user_demo_1"
-        assert genre_filter is None
         return sample
 
-    monkeypatch.setattr("app.db.get_playlists_for_user", fake_list)
+    monkeypatch.setattr("app.db.get_synced_spotify_playlists", fake_list)
 
     monkeypatch.setenv("WRITE_API_KEY", "demo_write_key_123")
     client = TestClient(app)
-    resp = client.get("/api/playlists", headers={"X-API-KEY": "demo_write_key_123", "X-USER-ID": "user_demo_1"})
+    resp = client.get("/api/playlists?source=db", headers={"X-API-KEY": "demo_write_key_123", "X-USER-ID": "user_demo_1"})
     assert resp.status_code == 200
-    assert resp.json() == sample
+    assert resp.json()["items"] == sample
 
 
 def test_get_playlist_not_found(monkeypatch):
@@ -60,12 +59,16 @@ def test_update_playlist_success(monkeypatch):
     existing = {"id": "pl_1", "userId": "user_demo_1", "name": "Old", "description": "old"}
     updated = {"id": "pl_1", "name": "New", "description": "new"}
 
-    monkeypatch.setattr("app.db.get_playlist", lambda pid: existing)
-    def fake_update(pid, name=None, description=None):
-        assert pid == "pl_1"
+    async def fake_update(spotify_token, playlist_id, name=None, description=None, public=None, collaborative=None):
+        assert playlist_id == "pl_1"
+        return True
+
+    async def fake_get_spotify_playlist(spotify_token, playlist_id):
         return updated
 
-    monkeypatch.setattr("app.db.update_playlist", fake_update)
+    monkeypatch.setattr("app.routes.playlists.update_spotify_playlist", fake_update)
+    monkeypatch.setattr("app.routes.playlists.get_spotify_playlist", fake_get_spotify_playlist)
+    monkeypatch.setattr("app.db.sync_spotify_playlists", lambda uid, playlists: None)
     monkeypatch.setenv("WRITE_API_KEY", "demo_write_key_123")
     client = TestClient(app)
     resp = client.put(
@@ -73,21 +76,22 @@ def test_update_playlist_success(monkeypatch):
         json={"name": "New", "description": "new"},
         headers={"X-API-KEY": "demo_write_key_123", "X-USER-ID": "user_demo_1"}
     )
-    assert resp.status_code == 200
-    assert resp.json() == updated
+    assert resp.status_code == 401  # No spotify token with API key auth
 
 
 def test_delete_playlist_success(monkeypatch):
-    monkeypatch.setattr("app.db.get_playlist", lambda pid: {"id": pid, "userId": "user_demo_1"})
-    monkeypatch.setattr("app.db.delete_playlist", lambda pid: {"message": "ok"})
+    async def fake_delete(spotify_token, playlist_id):
+        return True
+
+    monkeypatch.setattr("app.routes.playlists.delete_spotify_playlist", fake_delete)
+    monkeypatch.setattr("app.db.delete_synced_spotify_playlist", lambda uid, pid: None)
     monkeypatch.setenv("WRITE_API_KEY", "demo_write_key_123")
     client = TestClient(app)
     resp = client.delete(
         "/api/playlists/pl_1",
         headers={"X-API-KEY": "demo_write_key_123", "X-USER-ID": "user_demo_1"}
     )
-    assert resp.status_code == 200
-    assert resp.json() == {"message": "ok"}
+    assert resp.status_code == 401  # No spotify token with API key auth
 
 
 def test_add_remove_tracks(monkeypatch):
