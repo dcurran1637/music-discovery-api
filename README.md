@@ -98,14 +98,25 @@ The API is now running at `http://127.0.0.1:8000`
 
 ## Using the API
 
-### 1. Authenticate with Spotify
+### Using the Production API (Deployed on Render)
 
-Visit `http://127.0.0.1:8000/api/auth/login` in your browser. This will:
+The API is live at: **https://music-discovery-api-q03t.onrender.com**
+
+#### 1. Authenticate with Spotify
+
+Visit the login endpoint in your browser to start OAuth flow:
+```
+https://music-discovery-api-q03t.onrender.com/api/auth/login?user_id=YOUR_USERNAME
+```
+
+This will:
 - Redirect you to Spotify to authorize the app
-- Return you to the callback URL with a JWT token
+- Return you to the callback URL with a JWT token in the response
 - Automatically sync your playlists to the database
 
-### 2. Make API Requests
+Copy the JWT token from the response to use in API requests.
+
+#### 2. Make API Requests
 
 Use the JWT token in the `Authorization` header:
 
@@ -113,36 +124,84 @@ Use the JWT token in the `Authorization` header:
 # Set your token (you get this from the login callback)
 export JWT_TOKEN="your_jwt_token_here"
 
+# Check API health
+curl "https://music-discovery-api-q03t.onrender.com/api/health/live"
+
+# Get track details (requires auth)
+curl -H "Authorization: Bearer $JWT_TOKEN" \
+  "https://music-discovery-api-q03t.onrender.com/api/tracks/3n3Ppam7vgaVa1iaRUc9Lp"
+
+# Get artist information (requires auth)
+curl -H "Authorization: Bearer $JWT_TOKEN" \
+  "https://music-discovery-api-q03t.onrender.com/api/artists/0OdUWJ0sBjDrqHygGUXeCF"
+
 # Get your playlists from Spotify
 curl -H "Authorization: Bearer $JWT_TOKEN" \
-  "http://127.0.0.1:8000/api/playlists?source=spotify"
+  "https://music-discovery-api-q03t.onrender.com/api/playlists?source=spotify"
 
 # Get cached playlists from the database (faster)
 curl -H "Authorization: Bearer $JWT_TOKEN" \
-  "http://127.0.0.1:8000/api/playlists?source=db"
+  "https://music-discovery-api-q03t.onrender.com/api/playlists?source=db"
 
 # Create a new playlist
-curl -X POST "http://127.0.0.1:8000/api/playlists" \
+curl -X POST "https://music-discovery-api-q03t.onrender.com/api/playlists" \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name":"My Test Playlist","description":"Created via API","public":true}'
 
-# Get music recommendations
+# Get personalized music recommendations
 curl -H "Authorization: Bearer $JWT_TOKEN" \
-  "http://127.0.0.1:8000/api/discover/recommendations?limit=10"
+  "https://music-discovery-api-q03t.onrender.com/api/discover/recommendations?seed_tracks=3n3Ppam7vgaVa1iaRUc9Lp&limit=10"
+
+# Get artist recommendations
+curl -H "Authorization: Bearer $JWT_TOKEN" \
+  "https://music-discovery-api-q03t.onrender.com/api/discover/recommendations/artists?seed_artists=4NHQUGzhtTLFvgF5SZesLK&limit=5"
+
+# Get available genres
+curl -H "Authorization: Bearer $JWT_TOKEN" \
+  "https://music-discovery-api-q03t.onrender.com/api/discover/recommendations/genres"
 
 # Update a playlist
-curl -X PUT "http://127.0.0.1:8000/api/playlists/{playlist_id}" \
+curl -X PUT "https://music-discovery-api-q03t.onrender.com/api/playlists/{playlist_id}" \
   -H "Authorization: Bearer $JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name":"Updated Name","description":"New description"}'
 
 # Delete a playlist
-curl -X DELETE "http://127.0.0.1:8000/api/playlists/{playlist_id}" \
+curl -X DELETE "https://music-discovery-api-q03t.onrender.com/api/playlists/{playlist_id}" \
   -H "Authorization: Bearer $JWT_TOKEN"
 ```
 
-### 3. Explore the Interactive Docs
+#### 3. Explore the Interactive Docs
+
+Visit the Swagger UI for interactive API documentation:
+```
+https://music-discovery-api-q03t.onrender.com/docs
+```
+
+You can test all endpoints directly in your browser with the built-in interface.
+
+---
+
+### Using the API Locally
+
+For local development, follow the setup instructions above and use:
+
+#### 1. Authenticate with Spotify
+
+Visit `http://127.0.0.1:8000/api/auth/login` in your browser. This will:
+- Redirect you to Spotify to authorize the app
+- Return you to the callback URL with a JWT token
+- Automatically sync your playlists to the database
+
+#### 2. Make API Requests
+
+Use the same curl commands as above, but replace the production URL with:
+```
+http://127.0.0.1:8000
+```
+
+#### 3. Explore the Interactive Docs
 
 Visit `http://127.0.0.1:8000/docs` for interactive API documentation where you can test endpoints directly in your browser.
 
