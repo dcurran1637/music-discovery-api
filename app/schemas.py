@@ -50,7 +50,7 @@ class PlaylistCreate(BaseModel):
     description: Optional[str] = None
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {"name": "Chill Vibes", "description": "Laid-back tracks for working"}
         }
 
@@ -70,7 +70,7 @@ class SpotifyPlaylistCreate(BaseModel):
     collaborative: bool = False
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "name": "My Awesome Playlist",
                 "description": "A collection of my favorite tracks",
@@ -91,7 +91,7 @@ class SpotifyPlaylistUpdate(BaseModel):
     collaborative: Optional[bool] = None
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "name": "Updated Playlist Name",
                 "description": "New description"
