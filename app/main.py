@@ -37,7 +37,7 @@ A comprehensive API for discovering music, managing playlists, and generating pe
     """,
     servers=[
         {"url": "http://localhost:8000", "description": "Local development"},
-        {"url": "https://your-app.onrender.com", "description": "Production (Render)"}
+        {"url": "https://music-discovery-api-q03t.onrender.com", "description": "Production (Render)"}
     ]
 )
 

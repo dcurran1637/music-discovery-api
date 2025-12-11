@@ -107,9 +107,10 @@ async def callback(
     
     if not state:
         logger.warning("Callback missing state parameter - this may indicate a redirect URI mismatch in Spotify Dashboard")
+        from ..oauth import SPOTIFY_REDIRECT_URI
         raise HTTPException(
             status_code=400,
-            detail="Missing state parameter. This usually means your Spotify App's redirect URI doesn't match. Please verify in Spotify Developer Dashboard that the redirect URI is set to: http://127.0.0.1:8000/api/auth/callback"
+            detail=f"Missing state parameter. This usually means your Spotify App's redirect URI doesn't match. Please verify in Spotify Developer Dashboard that the redirect URI is set to: {SPOTIFY_REDIRECT_URI}"
         )
     
     try:
