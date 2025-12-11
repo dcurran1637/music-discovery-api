@@ -40,12 +40,7 @@ class Playlist(BaseModel):
 
 
 class PlaylistCreate(BaseModel):
-    """Schema used when creating or updating playlists via the API.
-
-    Fields:
-    - name: display name for the playlist (required)
-    - description: optional text describing the playlist
-    """
+    """Data needed to create or update a playlist."""
     name: str
     description: Optional[str] = None
 
@@ -56,14 +51,7 @@ class PlaylistCreate(BaseModel):
 
 
 class SpotifyPlaylistCreate(BaseModel):
-    """Schema for creating a Spotify playlist.
-    
-    Fields:
-    - name: display name for the playlist (required)
-    - description: optional text describing the playlist
-    - public: whether the playlist is public (default: True)
-    - collaborative: whether others can add tracks (default: False)
-    """
+    """Data needed to create a new Spotify playlist."""
     name: str
     description: Optional[str] = None
     public: bool = True
@@ -81,10 +69,7 @@ class SpotifyPlaylistCreate(BaseModel):
 
 
 class SpotifyPlaylistUpdate(BaseModel):
-    """Schema for updating a Spotify playlist.
-    
-    All fields are optional - only provided fields will be updated.
-    """
+    """Data to update an existing Spotify playlist. All fields are optional."""
     name: Optional[str] = None
     description: Optional[str] = None
     public: Optional[bool] = None

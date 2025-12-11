@@ -28,11 +28,10 @@ router = APIRouter(prefix="/api/auth", tags=["authentication"])
 
 
 async def sync_playlists_background(user_id: str, spotify_token: str):
-    """Background task to sync user's playlists after authentication."""
+    """Fetch all playlists from Spotify and save them to the database."""
     try:
         logger.info(f"Starting background playlist sync for user {user_id}")
         
-        # Fetch all playlists from Spotify (paginated)
         all_playlists = []
         limit = 50
         offset = 0
@@ -42,13 +41,11 @@ async def sync_playlists_background(user_id: str, spotify_token: str):
             items = response.get("items", [])
             all_playlists.extend(items)
             
-            # Check if there are more playlists
             total = response.get("total", 0)
             if offset + limit >= total:
                 break
             offset += limit
         
-        # Sync to database
         stats = db.sync_spotify_playlists(user_id, all_playlists)
         logger.info(f"Background playlist sync completed for user {user_id}: {stats}")
     except Exception as e:
@@ -60,7 +57,7 @@ async def login(
     user_id: str = Query(..., description="User ID"),
     json: bool = Query(False, description="Return JSON instead of redirect")
 ):
-    """Redirect user to Spotify OAuth authorization page (or return URL as JSON)"""
+    """Send user to Spotify login page or return the login URL as JSON."""
     try:
         auth_url, state = await generate_auth_url(user_id)
         
@@ -86,19 +83,16 @@ async def callback(
     state: Optional[str] = Query(None),
     error: Optional[str] = Query(None)
 ):
-    """Handle Spotify OAuth callback and return JWT session token"""
+    """Handle the return from Spotify after user logs in."""
     
-    # Log what we received for debugging
     logger.info(f"Callback received - code: {'present' if code else 'missing'}, state: {'present' if state else 'missing'}, error: {error}")
     
-    # Handle user denial
     if error:
         raise HTTPException(
             status_code=400,
             detail=f"Spotify authorization failed: {error}"
         )
     
-    # Validate required parameters
     if not code:
         raise HTTPException(
             status_code=400,
@@ -117,7 +111,6 @@ async def callback(
         token_response = await exchange_code_for_token(code, state)
         user_id = token_response["user_id"]
 
-        # Encrypt tokens and store in server-side session
         enc_access = encrypt(token_response.get("spotify_access_token") or "")
         enc_refresh = encrypt(token_response.get("spotify_refresh_token") or "")
         expires_in = token_response.get("spotify_token_expires_in") or 3600
@@ -126,10 +119,8 @@ async def callback(
         session_id = uuid.uuid4().hex
         db.put_session_tokens(session_id, user_id, enc_access, enc_refresh, expires_at)
 
-        # Return Spotify access token directly
         spotify_access_token = token_response.get("spotify_access_token")
 
-        # Trigger background playlist sync
         background_tasks.add_task(sync_playlists_background, user_id, spotify_access_token)
         
         logger.info(f"Successful OAuth login for user {user_id}, playlist sync queued")
@@ -151,7 +142,7 @@ async def callback(
 
 @router.post("/refresh")
 async def refresh_token(refresh_token: str = Query(...)):
-    """Refresh expired Spotify access token"""
+    """Get a new access token when the old one expires."""
     try:
         token_data = await refresh_spotify_token(refresh_token)
         return {

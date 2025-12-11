@@ -1,6 +1,4 @@
-"""
-PostgreSQL database models and session management.
-"""
+"""Database models and connection setup for PostgreSQL."""
 import os
 from sqlalchemy import create_engine, Column, String, Text, DateTime, JSON, Index
 from sqlalchemy.ext.declarative import declarative_base
@@ -9,10 +7,8 @@ from datetime import datetime
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    # Render uses postgres:// but SQLAlchemy 1.4+ requires postgresql://
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Create engine
 engine = create_engine(
     DATABASE_URL or "postgresql://localhost/music_discovery",
     pool_pre_ping=True,
@@ -40,23 +36,23 @@ class Playlist(Base):
 
 
 class SpotifyPlaylist(Base):
-    """Synced Spotify playlists."""
+    """Stores playlists synced from Spotify."""
     __tablename__ = "spotify_playlists"
     
-    id = Column(String, primary_key=True)  # Spotify playlist ID
-    userId = Column(String, nullable=False, index=True)  # Spotify user ID
+    id = Column(String, primary_key=True)
+    userId = Column(String, nullable=False, index=True)
     name = Column(String, nullable=False)
     description = Column(Text, default="")
-    public = Column(String, default="true")  # stored as string for compatibility
+    public = Column(String, default="true")
     collaborative = Column(String, default="false")
-    snapshot_id = Column(String)  # Spotify's version identifier
+    snapshot_id = Column(String)
     owner_id = Column(String)
     owner_display_name = Column(String)
-    track_count = Column(String, default="0")  # stored as string for compatibility
+    track_count = Column(String, default="0")
     images = Column(JSON, default=list)
     external_url = Column(String)
     uri = Column(String)
-    raw_data = Column(JSON, default=dict)  # Store full Spotify response
+    raw_data = Column(JSON, default=dict)
     synced_at = Column(DateTime, default=datetime.utcnow)
     createdAt = Column(DateTime, default=datetime.utcnow)
     updatedAt = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -81,7 +77,7 @@ class UserToken(Base):
 
 
 def get_db():
-    """Dependency for getting database session."""
+    """Provides a database session for API requests."""
     db = SessionLocal()
     try:
         yield db
@@ -90,5 +86,5 @@ def get_db():
 
 
 def init_db():
-    """Create all tables."""
+    """Creates all database tables if they don't exist."""
     Base.metadata.create_all(bind=engine)

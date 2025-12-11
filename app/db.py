@@ -37,7 +37,7 @@ def create_playlist(user_id: str, name: str, description: str = "") -> Dict:
 
 
 def get_playlists_for_user(user_id: str, genre_filter: Optional[str] = None) -> List[Dict]:
-    """Get all playlists for a user, optionally filtered by genre."""
+    """Gets all playlists for a user, filtered by genre if specified."""
     db = SessionLocal()
     try:
         playlists = db.query(Playlist).filter(Playlist.userId == user_id).all()
@@ -65,7 +65,7 @@ def get_playlists_for_user(user_id: str, genre_filter: Optional[str] = None) -> 
 
 
 def get_playlist(playlist_id: str) -> Optional[Dict]:
-    """Get a single playlist by ID."""
+    """Gets a single playlist by its ID."""
     db = SessionLocal()
     try:
         playlist = db.query(Playlist).filter(Playlist.id == playlist_id).first()
@@ -86,7 +86,7 @@ def get_playlist(playlist_id: str) -> Optional[Dict]:
 
 
 def update_playlist(playlist_id: str, name: Optional[str] = None, description: Optional[str] = None) -> Optional[Dict]:
-    """Update a playlist's name and/or description."""
+    """Changes a playlist's name or description."""
     db = SessionLocal()
     try:
         playlist = db.query(Playlist).filter(Playlist.id == playlist_id).first()
@@ -116,7 +116,7 @@ def update_playlist(playlist_id: str, name: Optional[str] = None, description: O
 
 
 def delete_playlist(playlist_id: str) -> Dict:
-    """Delete a playlist."""
+    """Removes a playlist from the database."""
     db = SessionLocal()
     try:
         playlist = db.query(Playlist).filter(Playlist.id == playlist_id).first()
@@ -129,7 +129,7 @@ def delete_playlist(playlist_id: str) -> Dict:
 
 
 def add_track(playlist_id: str, track: Dict) -> Optional[Dict]:
-    """Add a track to a playlist."""
+    """Adds a track to a playlist."""
     db = SessionLocal()
     try:
         playlist = db.query(Playlist).filter(Playlist.id == playlist_id).first()

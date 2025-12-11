@@ -1,6 +1,4 @@
-"""
-Health check and status endpoints for operational monitoring.
-"""
+"""Endpoints to check if the API is running and healthy."""
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -20,10 +18,7 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 @router.get("/live")
 async def liveness():
-    """
-    Liveness probe - returns 200 if service is running.
-    Useful for Kubernetes liveness checks.
-    """
+    """Returns OK if the service is running."""
     return {
         "status": "alive",
         "timestamp": datetime.utcnow().isoformat(),
@@ -32,17 +27,13 @@ async def liveness():
 
 @router.get("/ready")
 async def readiness():
-    """
-    Readiness probe - checks if service is ready to handle traffic.
-    Useful for Kubernetes readiness checks.
-    """
+    """Checks if the service can handle requests by testing database and cache."""
     checks = {
         "database": "unknown",
         "cache": "unknown",
         "overall": "ready",
     }
 
-    # Check database connectivity (PostgreSQL)
     try:
         db = SessionLocal()
         db.execute("SELECT 1")
@@ -52,7 +43,6 @@ async def readiness():
         logger.warning(f"Database check failed: {str(e)}")
         checks["database"] = "unhealthy"
 
-    # Check Redis connectivity
     try:
         redis = await aioredis.from_url(REDIS_URL, decode_responses=True)
         await redis.ping()
@@ -72,9 +62,7 @@ async def readiness():
 
 @router.get("/status")
 async def status():
-    """
-    Comprehensive service status including circuit breaker state.
-    """
+    \"\"\"Shows detailed service status including circuit breakers.\"\"\"
     try:
         circuit_breakers = await check_circuit_breaker_status()
     except Exception as e:

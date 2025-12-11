@@ -23,7 +23,7 @@ SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 
 
 async def get_available_genre_seeds(spotify_token: str) -> List[str]:
-    """Fetch Spotify-supported genre seeds for recommendations."""
+    """Gets the list of genres that Spotify supports for recommendations."""
     if not spotify_token:
         return []
     url = f"{SPOTIFY_API_BASE}/recommendations/available-genre-seeds"
@@ -38,7 +38,7 @@ async def get_available_genre_seeds(spotify_token: str) -> List[str]:
 
 
 async def get_spotify_token() -> Optional[str]:
-    """Get a Spotify token via client credentials (non-user-specific requests)."""
+    """Gets an app-level Spotify token for API requests that don't need user permission."""
     global CLIENT_TOKEN, TOKEN_EXPIRES
     client_id = os.getenv("SPOTIFY_CLIENT_ID")
     client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")

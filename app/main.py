@@ -8,7 +8,7 @@ import time
 from dotenv import load_dotenv
 import sys
 
-# Load environment variables from .env file (skip in test mode)
+# Load environment variables, but skip during tests
 if "pytest" not in sys.modules:
     load_dotenv()
 
@@ -23,8 +23,6 @@ from .logging_config import get_logger
 from .database import init_db
 
 logger = get_logger(__name__)
-
-# Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
@@ -41,27 +39,24 @@ A comprehensive API for discovering music, managing playlists, and generating pe
     ]
 )
 
-# Add rate limiter to app state
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, lambda request, exc: JSONResponse(
     status_code=429,
     content={"detail": "Rate limit exceeded. Please try again later."},
 ))
 
-# Startup event to initialize database
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database tables on startup."""
+    """Create database tables when the application starts."""
     try:
         logger.info("Initializing database...")
         init_db()
         logger.info("Database initialization complete")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
-        # Don't fail startup - let app start anyway
         pass
 
-# Include routers
+# API route modules
 app.include_router(playlists.router)
 app.include_router(tracks.router)
 app.include_router(artists.router)
@@ -70,13 +65,11 @@ app.include_router(auth_routes.router)
 app.include_router(gdpr.router)
 app.include_router(health.router)
 
-# Middleware for request/response logging
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Log all HTTP requests with duration."""
+    """Log each request and how long it takes to complete."""
     start_time = time.time()
     
-    # Log request
     logger.info(f"Incoming request: {request.method} {request.url.path}")
     
     try:
@@ -85,7 +78,6 @@ async def log_requests(request: Request, call_next):
         logger.error(f"Request failed: {request.method} {request.url.path} - {str(e)}")
         raise
     
-    # Log response with duration
     duration = time.time() - start_time
     logger.info(
         f"Completed request: {request.method} {request.url.path} "
@@ -94,7 +86,7 @@ async def log_requests(request: Request, call_next):
     
     return response
 
-# root endpoint
+# Root endpoint
 @app.get("/")
 def root():
     return {

@@ -1,6 +1,4 @@
-"""
-Rate limiting and circuit breaker utilities for production resilience.
-"""
+"""Tools for rate limiting and circuit breakers to handle failures gracefully."""
 
 import os
 from datetime import datetime, timedelta
@@ -10,12 +8,10 @@ from .logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# Rate limiting state (in production, use Redis)
 _rate_limit_store: dict = {}
 
-# Circuit breaker state
 class CircuitBreaker:
-    """Simple circuit breaker pattern implementation."""
+    """Prevents cascading failures by stopping requests when a service is failing."""
     
     def __init__(
         self,
@@ -23,28 +19,20 @@ class CircuitBreaker:
         recovery_timeout: int = 60,
         name: str = "CircuitBreaker"
     ):
-        """
-        Initialize circuit breaker.
-        
-        Args:
-            failure_threshold: Number of failures before opening circuit
-            recovery_timeout: Seconds to wait before attempting recovery
-            name: Name for logging
-        """
+        """Set up a circuit breaker with failure limits and recovery time."""
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.name = name
         self.failure_count = 0
         self.last_failure_time: Optional[datetime] = None
-        self.state = "closed"  # closed, open, half-open
+        self.state = "closed"
 
     def is_open(self) -> bool:
-        """Check if circuit is open and should reject requests."""
+        """Returns True if the circuit is open and should reject requests."""
         if self.state == "closed":
             return False
         
         if self.state == "open":
-            # Check if recovery timeout has passed
             if (datetime.utcnow() - self.last_failure_time).seconds > self.recovery_timeout:
                 self.state = "half-open"
                 logger.info(f"Circuit breaker {self.name} transitioning to half-open")

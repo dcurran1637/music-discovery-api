@@ -1,7 +1,4 @@
-"""
-OAuth 2.0 implementation for Spotify authentication.
-Handles the OAuth flow: authorization code flow for user-specific access.
-"""
+"""Handles Spotify OAuth authentication using authorization code flow."""
 
 import os
 import base64
@@ -12,26 +9,23 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from fastapi import HTTPException, status
 
-# Spotify OAuth endpoints
 SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize"
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 SPOTIFY_API_URL = "https://api.spotify.com/v1"
 
-# Configuration from environment variables
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID", "")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
 SPOTIFY_REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8000/api/auth/callback")
 JWT_SECRET = os.getenv("JWT_SECRET", "demo_jwt_secret")
 JWT_ALGORITHM = "HS256"
 
-# Use Redis for authorization states (fallback to in-memory dict if Redis unavailable)
+# Redis stores auth states, falls back to memory if unavailable
 import redis.asyncio as aioredis
 import json
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-AUTH_STATE_TTL = 15 * 60  # 15 minutes
+AUTH_STATE_TTL = 15 * 60
 
-# In-memory fallback
 _auth_states_fallback: Dict[str, Dict[str, Any]] = {}
 
 
@@ -42,7 +36,6 @@ async def _set_state(state: str, user_id: str):
         await r.set(f"oauth_state:{state}", json.dumps(payload), ex=AUTH_STATE_TTL)
         await r.close()
     except Exception:
-        # fallback to in-memory store (not durable)
         _auth_states_fallback[state] = {"user_id": user_id, "created_at": datetime.utcnow()}
 
 
@@ -62,12 +55,7 @@ async def _pop_state(state: str) -> Optional[Dict[str, Any]]:
 
 
 async def generate_auth_url(user_id: str) -> tuple[str, str]:
-    """
-    Generate Spotify OAuth authorization URL.
-    
-    Returns:
-        Tuple of (auth_url, state)
-    """
+    """Create a Spotify login URL and return it with the security state token."""
     if not SPOTIFY_CLIENT_ID:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
