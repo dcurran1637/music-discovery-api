@@ -62,7 +62,7 @@ async def readiness():
 
 @router.get("/status")
 async def status():
-    \"\"\"Shows detailed service status including circuit breakers.\"\"\"
+    """Shows detailed service status including circuit breakers."""
     try:
         circuit_breakers = await check_circuit_breaker_status()
     except Exception as e:
