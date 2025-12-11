@@ -58,6 +58,13 @@ services:
       - key: ENVIRONMENT
         value: production
 
+  # Redis Cache Service
+  - type: redis
+    name: music-discovery-redis
+    plan: starter
+    region: oregon
+    maxmemoryPolicy: allkeys-lru
+
 # PostgreSQL Database
 databases:
   - name: music-discovery-db
@@ -65,9 +72,3 @@ databases:
     databaseName: music_discovery
     region: oregon
     postgresMajorVersion: 15
-
-# Redis Cache
-  - name: music-discovery-redis
-    plan: starter
-    region: oregon
-    maxmemoryPolicy: allkeys-lru
