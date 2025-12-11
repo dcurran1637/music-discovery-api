@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from datetime import datetime
 import redis.asyncio as aioredis
 import os
-from .. import db
+from ..database import SessionLocal
 from ..logging_config import get_logger
 from ..resilience import check_circuit_breaker_status
 
@@ -42,9 +42,11 @@ async def readiness():
         "overall": "ready",
     }
 
-    # Check database connectivity (DynamoDB or other)
+    # Check database connectivity (PostgreSQL)
     try:
-        _ = db.table  # Try accessing table
+        db = SessionLocal()
+        db.execute("SELECT 1")
+        db.close()
         checks["database"] = "healthy"
     except Exception as e:
         logger.warning(f"Database check failed: {str(e)}")
