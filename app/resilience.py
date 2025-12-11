@@ -91,10 +91,10 @@ spotify_circuit_breaker = CircuitBreaker(
     recovery_timeout=60,
     name="SpotifyAPI"
 )
-dynamodb_circuit_breaker = CircuitBreaker(
+database_circuit_breaker = CircuitBreaker(
     failure_threshold=10,
     recovery_timeout=30,
-    name="DynamoDB"
+    name="PostgreSQL"
 )
 
 
@@ -105,8 +105,8 @@ async def check_circuit_breaker_status() -> dict:
             "state": spotify_circuit_breaker.state,
             "failures": spotify_circuit_breaker.failure_count,
         },
-        "dynamodb": {
-            "state": dynamodb_circuit_breaker.state,
-            "failures": dynamodb_circuit_breaker.failure_count,
+        "database": {
+            "state": database_circuit_breaker.state,
+            "failures": database_circuit_breaker.failure_count,
         },
     }
