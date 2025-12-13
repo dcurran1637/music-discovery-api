@@ -2,11 +2,14 @@
 
 import os
 from datetime import datetime, timedelta
-from typing import Optional, Callable
+from typing import Optional, Callable, TypeVar, Any
 import asyncio
+import random
 from .logging_config import get_logger
 
 logger = get_logger(__name__)
+
+T = TypeVar('T')
 
 _rate_limit_store: dict = {}
 
@@ -110,3 +113,66 @@ async def check_circuit_breaker_status() -> dict:
             "failures": database_circuit_breaker.failure_count,
         },
     }
+
+
+async def retry_with_exponential_backoff(
+    func: Callable[..., Any],
+    *args,
+    max_retries: int = 3,
+    initial_delay: float = 1.0,
+    max_delay: float = 32.0,
+    exponential_base: float = 2.0,
+    jitter: bool = True,
+    retryable_exceptions: tuple = (Exception,),
+    **kwargs
+) -> T:
+    """
+    Retry a function with exponential backoff.
+    
+    Args:
+        func: Async function to retry
+        *args: Positional arguments for the function
+        max_retries: Maximum number of retry attempts (default: 3)
+        initial_delay: Initial delay in seconds (default: 1.0)
+        max_delay: Maximum delay in seconds (default: 32.0)
+        exponential_base: Base for exponential calculation (default: 2.0)
+        jitter: Add random jitter to prevent thundering herd (default: True)
+        retryable_exceptions: Tuple of exceptions to retry on (default: all)
+        **kwargs: Keyword arguments for the function
+        
+    Returns:
+        Result from the function
+        
+    Raises:
+        Last exception if all retries fail
+    """
+    last_exception = None
+    
+    for attempt in range(max_retries + 1):
+        try:
+            result = await func(*args, **kwargs)
+            if attempt > 0:
+                logger.info(f"Function {func.__name__} succeeded after {attempt} retries")
+            return result
+        except retryable_exceptions as e:
+            last_exception = e
+            
+            if attempt >= max_retries:
+                logger.error(f"Function {func.__name__} failed after {max_retries} retries: {e}")
+                raise
+            
+            # Calculate delay with exponential backoff
+            delay = min(initial_delay * (exponential_base ** attempt), max_delay)
+            
+            # Add jitter to prevent thundering herd problem
+            if jitter:
+                delay = delay * (0.5 + random.random() * 0.5)
+            
+            logger.warning(
+                f"Function {func.__name__} failed (attempt {attempt + 1}/{max_retries + 1}): {e}. "
+                f"Retrying in {delay:.2f}s..."
+            )
+            
+            await asyncio.sleep(delay)
+    
+    raise last_exception
