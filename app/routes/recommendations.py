@@ -127,13 +127,30 @@ async def recommendations_base(
     time_range: Optional[str] = Query("medium_term", pattern="^(short_term|medium_term|long_term)$"),
     debug: Optional[bool] = Query(False)
 ):
-    """Base recommendations endpoint used by tests.
-    Defaults to genre seeds when none specified.
+    """Base recommendations endpoint that uses user's top genres from listening history.
+    Falls back to default genres if user has no listening history.
     """
     user_id, spotify_token, token_source = await authenticate_user(authorization)
 
-    # Use default genres when none provided
-    seeds = DEFAULT_GENRES[:MAX_SEEDS]
+    # Get user's top genres from their top artists
+    seeds = []
+    try:
+        from ..spotify_client import get_user_top_artists
+        top_artists = await get_user_top_artists(spotify_token, limit=10, time_range=time_range)
+        user_genres = []
+        for artist in top_artists:
+            user_genres.extend(artist.get("genres", []))
+        # Get most common genres
+        if user_genres:
+            from collections import Counter
+            genre_counts = Counter(user_genres)
+            seeds = [genre for genre, _ in genre_counts.most_common(MAX_SEEDS)]
+    except Exception as e:
+        logger.warning(f"Failed to fetch user top genres: {e}")
+    
+    # Fallback to default genres if no user genres found
+    if not seeds:
+        seeds = DEFAULT_GENRES[:MAX_SEEDS]
 
     # Optional: validate released_after format (YYYY-MM-DD). If invalid, leave handling flexible.
     if released_after:
