@@ -19,9 +19,10 @@ SPOTIFY_REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8000/
 JWT_SECRET = os.getenv("JWT_SECRET", "demo_jwt_secret")
 JWT_ALGORITHM = "HS256"
 
-# Redis stores auth states, falls back to memory if unavailable
+# OAuth state storage with PostgreSQL fallback (since Redis unavailable on free tier)
 import redis.asyncio as aioredis
 import json
+from .database import SessionLocal, OAuthState
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 AUTH_STATE_TTL = 15 * 60
@@ -30,16 +31,42 @@ _auth_states_fallback: Dict[str, Dict[str, Any]] = {}
 
 
 async def _set_state(state: str, user_id: str):
+    """Store OAuth state in Redis, PostgreSQL, or memory (in that order of preference)."""
     payload = {"user_id": user_id, "created_at": datetime.utcnow().isoformat()}
+    
+    # Try Redis first
     try:
         r = await aioredis.from_url(REDIS_URL, decode_responses=True)
         await r.set(f"oauth_state:{state}", json.dumps(payload), ex=AUTH_STATE_TTL)
         await r.close()
+        return
     except Exception:
-        _auth_states_fallback[state] = {"user_id": user_id, "created_at": datetime.utcnow()}
+        pass
+    
+    # Fallback to PostgreSQL
+    try:
+        db = SessionLocal()
+        expires_at = datetime.utcnow() + timedelta(seconds=AUTH_STATE_TTL)
+        oauth_state = OAuthState(
+            state=state,
+            user_id=user_id,
+            created_at=datetime.utcnow(),
+            expires_at=expires_at
+        )
+        db.add(oauth_state)
+        db.commit()
+        db.close()
+        return
+    except Exception:
+        pass
+    
+    # Final fallback to memory
+    _auth_states_fallback[state] = {"user_id": user_id, "created_at": datetime.utcnow()}
 
 
 async def _pop_state(state: str) -> Optional[Dict[str, Any]]:
+    """Retrieve and delete OAuth state from Redis, PostgreSQL, or memory."""
+    # Try Redis first
     try:
         r = await aioredis.from_url(REDIS_URL, decode_responses=True)
         data = await r.get(f"oauth_state:{state}")
@@ -50,7 +77,33 @@ async def _pop_state(state: str) -> Optional[Dict[str, Any]]:
         await r.close()
     except Exception:
         pass
-
+    
+    # Try PostgreSQL
+    try:
+        db = SessionLocal()
+        oauth_state = db.query(OAuthState).filter(OAuthState.state == state).first()
+        if oauth_state:
+            # Check if expired
+            if oauth_state.expires_at > datetime.utcnow():
+                result = {
+                    "user_id": oauth_state.user_id,
+                    "created_at": oauth_state.created_at.isoformat()
+                }
+                db.delete(oauth_state)
+                db.commit()
+                db.close()
+                return result
+            else:
+                # Expired, delete it
+                db.delete(oauth_state)
+                db.commit()
+                db.close()
+                return None
+        db.close()
+    except Exception:
+        pass
+    
+    # Final fallback to memory
     return _auth_states_fallback.pop(state, None)
 
 
@@ -148,9 +201,11 @@ async def exchange_code_for_token(code: str, state: str) -> Dict[str, Any]:
         )
         
         if response.status_code != 200:
+            error_detail = response.text
+            logger.error(f"Spotify token exchange failed: {response.status_code} - {error_detail}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to exchange code for token"
+                detail=f"Failed to exchange code for token: {error_detail}"
             )
         
         token_data = response.json()

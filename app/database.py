@@ -76,6 +76,20 @@ class UserToken(Base):
     updatedAt = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class OAuthState(Base):
+    """Stores OAuth state parameters for verification (replaces Redis when unavailable)."""
+    __tablename__ = "oauth_states"
+    
+    state = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    
+    __table_args__ = (
+        Index('idx_oauth_states_expires_at', 'expires_at'),
+    )
+
+
 def get_db():
     """Provides a database session for API requests."""
     db = SessionLocal()
